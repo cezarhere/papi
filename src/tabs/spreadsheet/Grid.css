@@ -102,15 +102,17 @@
   justify-content: flex-end;
 }
 
-/* Grab zone on the right edge of each column header. Wider than the 1px
-   border it sits on so it's easy to hit; the headers are position: sticky
-   (so already a positioning context for this absolute child). */
+/* Grab zone on the right edge of each column header. It must sit fully
+   *inside* its own header: the next column's header is painted over any
+   part that spills past the border, which left only a ~4px sliver of the
+   old border-straddling handle actually clickable. Sticky headers are
+   already a positioning context for this absolute child. */
 .grid-col-resize-handle {
   position: absolute;
   top: 0;
-  right: -3px;
+  right: 0;
   bottom: 0;
-  width: 7px;
+  width: 9px;
   cursor: col-resize;
   z-index: 1;
 }

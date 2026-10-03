@@ -78,9 +78,10 @@ export default function Toolbar({
           </option>
         ))}
       </select>
+      <div className="toolbar-divider" />
       <button
         type="button"
-        className="toolbar-button"
+        className="toolbar-capsule"
         onClick={() => onChangeDecimals(-1)}
         title="Fewer decimal places"
         aria-label="Fewer decimal places"
@@ -89,7 +90,7 @@ export default function Toolbar({
       </button>
       <button
         type="button"
-        className="toolbar-button"
+        className="toolbar-capsule"
         onClick={() => onChangeDecimals(1)}
         title="More decimal places"
         aria-label="More decimal places"
