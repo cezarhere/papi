@@ -3,6 +3,7 @@ import { addressKey } from "./address";
 import Cell from "./Cell";
 import { CELL_HEIGHT, COL_HEADER_HEIGHT, ROW_HEADER_WIDTH } from "./constants";
 import { clampWidth } from "./useColumnWidths";
+import { refEdgesForCell } from "./formulaRefs";
 import { isCellInBounds, type RangeBounds } from "./range";
 import type { CellAddress, CellFormat, EditingState } from "./types";
 import { columnLabel } from "./utils";
@@ -15,7 +16,9 @@ interface GridProps {
   selectionBounds: RangeBounds;
   fillPreviewBounds: RangeBounds | null;
   copiedBounds: RangeBounds | null;
-  formulaRefBounds: RangeBounds | null;
+  // Every range referenced by the formula being edited, outlined for as
+  // long as it stays open.
+  formulaRefs: RangeBounds[];
   isDragging: boolean;
   displayValues: Record<string, string>;
   // Keys of cells whose computed value is a number (right-aligned).
@@ -40,7 +43,7 @@ export default function Grid({
   selectionBounds,
   fillPreviewBounds,
   copiedBounds,
-  formulaRefBounds,
+  formulaRefs,
   isDragging,
   displayValues,
   numericKeys,
@@ -92,6 +95,20 @@ export default function Grid({
       {columns.map((col) => (
         <div key={`col-${col}`} className="grid-header grid-header-col">
           {columnLabel(col)}
+          {/* Left edge doubles as the *previous* column's handle, so the grab
+              zone straddles the border line like Excel's (right-edge only
+              meant clicking on the line itself, or just past it, missed). */}
+          {col > 0 && (
+            <div
+              className="grid-col-resize-handle grid-col-resize-handle-left"
+              onMouseDown={(e) => startColumnResize(col - 1, e)}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                onColumnAutoFit(col - 1);
+              }}
+              title="Drag to resize, double-click to fit"
+            />
+          )}
           <div
             className="grid-col-resize-handle"
             onMouseDown={(e) => startColumnResize(col, e)}
@@ -117,7 +134,7 @@ export default function Grid({
             const isActive = activeCell.row === row && activeCell.col === col;
             const isFillPreview = fillPreviewBounds !== null && isCellInBounds(address, fillPreviewBounds);
             const isCopied = copiedBounds !== null && isCellInBounds(address, copiedBounds);
-            const isFormulaRef = formulaRefBounds !== null && isCellInBounds(address, formulaRefBounds);
+            const refEdges = refEdgesForCell(row, col, formulaRefs);
             const showFillHandle =
               !isDragging &&
               row === selectionBounds.maxRow &&
@@ -133,7 +150,7 @@ export default function Grid({
                 isActive={isActive}
                 isFillPreview={isFillPreview}
                 isCopied={isCopied}
-                isFormulaRef={isFormulaRef}
+                refEdges={refEdges}
                 isNumeric={numericKeys.has(addressKey(address))}
                 showFillHandle={showFillHandle}
                 editing={isEditing}

@@ -68,10 +68,37 @@
   outline-offset: -2px;
 }
 
-.grid-cell-formula-ref {
+/* Persistent outline around every range the formula being edited refers
+   to (Excel-style). Drawn per side by a pseudo-element, only on the outer
+   edge of each range: a block like B2:C4 gets one rectangle with no lines
+   between its cells, and neighbouring cells that belong to the same range
+   share one border. */
+.grid-cell-ref {
   z-index: 1;
-  outline: 2px dashed var(--text-result);
-  outline-offset: -2px;
+}
+
+.grid-cell-ref::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 0 dashed var(--text-result);
+}
+
+.grid-cell-ref-top::after {
+  border-top-width: 2px;
+}
+
+.grid-cell-ref-right::after {
+  border-right-width: 2px;
+}
+
+.grid-cell-ref-bottom::after {
+  border-bottom-width: 2px;
+}
+
+.grid-cell-ref-left::after {
+  border-left-width: 2px;
 }
 
 .grid-cell-input {
@@ -110,11 +137,20 @@
 .grid-col-resize-handle {
   position: absolute;
   top: 0;
-  right: 0;
+  /* -1px: also covers the header's own 1px right border, the exact line
+     people aim at (an absolute child is positioned inside the padding box,
+     which stops short of the border). */
+  right: -1px;
   bottom: 0;
-  width: 9px;
+  width: 10px;
   cursor: col-resize;
   z-index: 1;
+}
+
+.grid-col-resize-handle-left {
+  right: auto;
+  left: 0;
+  width: 6px;
 }
 
 .grid-col-resize-handle:hover {

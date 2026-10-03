@@ -1,4 +1,5 @@
 import { useEffect, type CSSProperties, type MouseEvent, type RefObject } from "react";
+import type { RefEdges } from "./formulaRefs";
 import type { CellFormat } from "./types";
 
 interface CellProps {
@@ -11,7 +12,9 @@ interface CellProps {
   isActive: boolean;
   isFillPreview: boolean;
   isCopied: boolean;
-  isFormulaRef: boolean;
+  // Sides of this cell that lie on the outer edge of a range referenced by
+  // the formula currently being edited (null: not part of one).
+  refEdges: RefEdges | null;
   // Numeric results are right-aligned (spreadsheet convention, and what
   // makes a column of figures readable in a screenshot).
   isNumeric: boolean;
@@ -39,7 +42,7 @@ export default function Cell({
   isActive,
   isFillPreview,
   isCopied,
-  isFormulaRef,
+  refEdges,
   isNumeric,
   showFillHandle,
   editing,
@@ -69,7 +72,13 @@ export default function Cell({
   if (isActive) classNames.push("grid-cell-active");
   if (isFillPreview) classNames.push("grid-cell-fill-preview");
   if (isCopied) classNames.push("grid-cell-copied");
-  if (isFormulaRef) classNames.push("grid-cell-formula-ref");
+  if (refEdges) {
+    classNames.push("grid-cell-ref");
+    if (refEdges.top) classNames.push("grid-cell-ref-top");
+    if (refEdges.right) classNames.push("grid-cell-ref-right");
+    if (refEdges.bottom) classNames.push("grid-cell-ref-bottom");
+    if (refEdges.left) classNames.push("grid-cell-ref-left");
+  }
   if (isNumeric && !editing) classNames.push("grid-cell-numeric");
 
   const style: CSSProperties = {};

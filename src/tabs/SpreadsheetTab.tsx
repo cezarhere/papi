@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { addressKey, formatRangeReference } from "./spreadsheet/address";
 import { COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
+import { parseFormulaRefs } from "./spreadsheet/formulaRefs";
 import FormulaBar from "./spreadsheet/FormulaBar";
 import Grid from "./spreadsheet/Grid";
 import { buildDocument, loadDocumentFromStorage, saveDocumentToStorage } from "./spreadsheet/persistence";
@@ -597,9 +598,9 @@ export default function SpreadsheetTab() {
         }
       : null;
   const copiedBounds = copiedRange ? normalizeRange(copiedRange) : null;
-  const formulaRefBounds = formulaRefDrag
-    ? normalizeRange({ anchor: formulaRefDrag.anchor, focus: formulaRefDrag.focus })
-    : null;
+  // Outlined for as long as a formula is being edited — including after the
+  // drag that picked a reference ends — not just while dragging.
+  const formulaRefs = editing ? parseFormulaRefs(editing.value, rows, cols) : [];
 
   const activeCellKey = addressKey(activeCell);
   const formulaBarValue = editing ? editing.value : engine.getRawInput(activeCell);
@@ -635,7 +636,7 @@ export default function SpreadsheetTab() {
           selectionBounds={selectionBounds}
           fillPreviewBounds={fillPreviewBounds}
           copiedBounds={copiedBounds}
-          formulaRefBounds={formulaRefBounds}
+          formulaRefs={formulaRefs}
           isDragging={dragMode !== null}
           displayValues={displayValues}
           numericKeys={numericKeys}
