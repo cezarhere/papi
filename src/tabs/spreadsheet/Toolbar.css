@@ -1,0 +1,90 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.toolbar-button:hover {
+  background: var(--border);
+}
+
+.toolbar-button-active {
+  background: var(--selection-bg);
+  border-color: var(--text-accent);
+  color: var(--text-accent);
+}
+
+.toolbar-icon-bold {
+  font-weight: 700;
+}
+
+.toolbar-icon-italic {
+  font-style: italic;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.toolbar-swatch {
+  width: 22px;
+  height: 22px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.toolbar-swatch:hover {
+  border-color: var(--text-secondary);
+}
+
+.toolbar-swatch-active {
+  border-color: var(--text-accent);
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar-text-button {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toolbar-text-button:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.toolbar-text-button:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: -2px;
+}

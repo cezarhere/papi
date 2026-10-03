@@ -1,0 +1,28 @@
+.formula-bar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 13px;
+}
+
+.formula-bar-address {
+  width: 60px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  border-right: 1px solid var(--border);
+  text-align: center;
+}
+
+.formula-bar-value {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}

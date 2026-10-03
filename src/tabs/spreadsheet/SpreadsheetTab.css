@@ -1,0 +1,31 @@
+.spreadsheet-tab {
+  box-sizing: border-box;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.grid-area {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  /* No padding: `position: sticky` offsets are relative to the scroll
+     container's *padding* edge, not its border edge — padding here would
+     leave a gap between the container's true top/left edge and where the
+     sticky headers actually stick, letting scrolled-past content show
+     through uncovered in that gap. */
+  overflow: auto;
+  /* Scrolling itself stays functional — this only hides the scrollbar's
+     own visual track/thumb, same idea as Numi's chrome-free look. */
+  scrollbar-width: none;
+}
+
+.grid-area::-webkit-scrollbar {
+  display: none;
+}
+
+.grid-area:focus {
+  outline: none;
+}

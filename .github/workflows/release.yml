@@ -1,0 +1,30 @@
+name: Release
+# Builds, signs, notarizes and uploads DMG/ZIP to a GitHub Release when a
+# v* tag is pushed. Requires these repository secrets (never commit them):
+#   CSC_LINK                     base64 of the Developer ID Application .p12
+#   CSC_KEY_PASSWORD             .p12 password
+#   APPLE_API_KEY                contents of the App Store Connect API key (.p8)
+#   APPLE_API_KEY_ID, APPLE_API_ISSUER   from App Store Connect > Keys
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Write API key
+        run: |
+          printf '%s' "${{ secrets.APPLE_API_KEY }}" > "${{ runner.temp }}/AuthKey.p8"
+      - run: npm run dist -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}

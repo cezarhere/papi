@@ -1,0 +1,21 @@
+name: Bug report
+description: Something in PAPI isn't working
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What happened?, description: What did you see, and what did you expect? }
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: For calculator problems, paste the exact lines you typed.
+      render: text
+  - type: input
+    id: version
+    attributes: { label: PAPI version, description: Shown in the menu-bar menu, placeholder: "0.1.0" }
+    validations: { required: true }
+  - type: input
+    id: macos
+    attributes: { label: macOS version and chip, placeholder: "macOS 15.1, Apple Silicon" }

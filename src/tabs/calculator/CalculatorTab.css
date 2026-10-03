@@ -1,0 +1,189 @@
+.calculator-tab {
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  padding: 16px 24px;
+  box-sizing: border-box;
+  /* Scrolling stays functional — only the visible track/thumb goes away,
+     same treatment as the spreadsheet grid's .grid-area. */
+  scrollbar-width: none;
+}
+
+.calculator-tab::-webkit-scrollbar {
+  display: none;
+}
+
+/* Plain block wrapper around the divider + rows — natural, content-
+   driven height (unlike .calculator-tab, which has a fixed client
+   height and scrolls its overflow). Positioning context for the single
+   shared divider line below: anchoring it here instead of on
+   .calculator-tab directly is what lets top:0/bottom:0 stretch it to
+   the full scrollable content height instead of just the visible
+   viewport, so it doesn't disappear partway down a long, scrolled list. */
+.calc-lines {
+  position: relative;
+  /* At least as tall as the visible window (Phase I) — without this,
+     the wrapper (and so the divider, sized against it) only reaches as
+     far down as the actual rows go, leaving the rest of the window
+     divider-less whenever there isn't enough content to fill it. Still
+     grows taller than 100% naturally when there IS enough content to
+     scroll (block layout — min-height doesn't cap the max). */
+  min-height: 100%;
+}
+
+.calc-line {
+  display: flex;
+  /* Bottom-aligned, not baseline (Phase I) — a wrapped multi-line entry
+     (the auto-growing textarea below) makes this row taller than one
+     line, and the result should sit next to the *last* wrapped line,
+     not the first. Baseline alignment would align the result to the
+     input's first line instead, since that's where a single-line
+     item's own baseline naturally falls. */
+  align-items: flex-end;
+  position: relative;
+  border-radius: 4px;
+  padding: 5px 4px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.calc-line-selected {
+  background: var(--selection-bg);
+}
+
+.calc-line-input {
+  /* flex-basis set inline per-row from the shared divider position
+     (CalculatorTab.tsx's inputColumnPercent) — flex:0 0 <percent>%,
+     fixed (no shrink). Fixed, rather than letting a row's own result
+     shrink it, is what keeps the divider at the exact same x position
+     on every row (a single continuous line, not one that jumps around
+     per-row based on how wide that row's own result happens to be). */
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  line-height: inherit;
+  /* A <textarea> now, not a single-line <input> (Phase I) — text that
+     doesn't fit the current width wraps onto more visual lines instead
+     of scrolling/hiding within a fixed-size box; Line.tsx's
+     ResizeObserver + scrollHeight measurement grows the element (and so
+     this row) to fit however many lines that ends up being. resize:none
+     hides the native drag handle (this isn't meant to be manually
+     resized); overflow-wrap lets a long unbroken token (a big pasted
+     number) still wrap instead of overflowing the row horizontally.
+     overflow:hidden avoids a scrollbar flashing during the brief
+     height:auto reset Line.tsx does before each remeasure. */
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+
+/* Thin, draggable column boundary (Phase H, Numi-style) — a single
+   element spanning the whole list (positioned via CalculatorTab.tsx's
+   inline `left`), not one per row, so it always reads as one unbroken
+   line instead of a stack of short per-row segments with gaps between
+   them. A wider invisible hit-area (this element) with a thin visible
+   line centered inside it (::after) makes it easy to grab without
+   looking heavy. z-index keeps it a solid, always-visible wall — it
+   never gets covered by a row's result, unlike .calc-line-result's own
+   clipping below, which is what actually keeps content from crossing
+   it in the first place. */
+.calc-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  margin-left: -8px;
+  z-index: 1;
+  cursor: col-resize;
+}
+
+.calc-divider::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.calc-divider:hover::after,
+.calc-divider-active::after {
+  background: var(--text-accent);
+  width: 2px;
+}
+
+.calc-line-result {
+  /* Fills whatever's left of the row after the input's fixed width —
+     i.e. exactly the space right of the divider line. Excel-style clip
+     when the value is wider than that: the *left* end (nearest the
+     divider/input) gets cut off, keeping the end of the value (the
+     unit, the year, the total — usually the part that matters) always
+     visible. Plain text-align:right + overflow:hidden does NOT do
+     this — in normal ltr layout, content that overflows its box always
+     spills past the *right* edge regardless of text-align (alignment
+     only matters when there's slack space, not on overflow), so a
+     value gets clipped at its *end* instead, backwards from what's
+     wanted. direction:rtl flips which side overflow spills off of (the
+     left, here), so overflow:hidden clips the start instead — the
+     inner .calc-line-result-value span keeps the value itself reading
+     normally left-to-right within whatever's visible. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  /* Constant padding + radius (not just when copied) so clicking to copy
+     never resizes/shifts the row — only the background/text color below
+     actually change. */
+  padding: 2px 8px;
+  border-radius: 10px;
+  --result-color: var(--text-result);
+  color: var(--result-color);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Hover feedback — a soft tint of the result's own color, so it reads
+   as "this is clickable" before you actually click it. Excludes the
+   copied state (:not(...)) since that already sets its own solid
+   background (the result's full color, text inverted) and would
+   otherwise lose to this rule on specificity if the cursor is still
+   over the result right after clicking it. */
+.calc-line-result:hover:not(.calc-line-result-copied) {
+  background: color-mix(in srgb, var(--result-color) 22%, transparent);
+}
+
+/* dir="ltr" alone still lets the browser's bidi algorithm reorder a
+   character or two across the clip edge (digits/punctuation right at
+   the boundary can leak onto the input side) — bidi-override forces
+   strict left-to-right rendering with no reordering at all, which is
+   what actually keeps the clip edge clean. */
+.calc-line-result-value {
+  unicode-bidi: bidi-override;
+  direction: ltr;
+}
+
+.calc-line-result-error {
+  --result-color: var(--text-error);
+}
+
+.calc-line-result-accent {
+  --result-color: var(--text-accent);
+}
+
+/* Numi-style copy feedback (Line.tsx, ~700ms after a click): the
+   result's own color becomes the pill fill, text inverts to the app's
+   background — --result-color is a plain custom property (not
+   currentColor), so it isn't affected by the color: override below. */
+.calc-line-result-copied {
+  background: var(--result-color);
+  color: var(--bg-primary);
+}
+
+.calc-line-input-keyword {
+  color: var(--text-accent);
+}

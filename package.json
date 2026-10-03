@@ -1,0 +1,104 @@
+{
+  "name": "papi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
+    "electron:dev": "electron-vite dev",
+    "electron:build": "electron-vite build",
+    "electron:preview": "electron-vite preview",
+    "electron:package": "electron-vite build && electron-builder --mac --dir",
+    "dist": "electron-vite build && electron-builder --mac",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "build": {
+    "appId": "com.cezarmatreniuc.papi",
+    "productName": "PAPI",
+    "copyright": "Copyright \u00a9 2026 Cezar Matreniuc",
+    "files": [
+      "out/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "electronLanguages": [
+      "en",
+      "en-US"
+    ],
+    "compression": "maximum",
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    },
+    "dmg": {
+      "sign": true
+    },
+    "publish": [
+      {
+        "provider": "github"
+      }
+    ],
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "afterAllArtifactBuild": "build/notarize-dmg.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "chrono-node": "^2.10.1",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "hyperformula": "^3.3.0",
+    "mathjs": "^15.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^3.2.7"
+  },
+  "description": "A menu-bar calculator and spreadsheet for macOS: Numi-style natural-language math plus a small spreadsheet, one shortcut away.",
+  "author": {
+    "name": "Cezar Matreniuc",
+    "email": "cezarbzns@gmail.com"
+  },
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/cezarhere/papi",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cezarhere/papi.git"
+  }
+}

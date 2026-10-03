@@ -1,0 +1,386 @@
+import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { release } from "node:os";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Pin the user-data folder explicitly rather than letting Electron derive
+// it from package.json's "name" — that name changed (spreadsheet-app ->
+// papi) and a derived path silently orphans saved data on rename. Must run
+// before app "ready" (and before any renderer touches localStorage, which
+// lives inside this folder). One-time copy, never a move: the old folder
+// is left in place as a backup.
+const LEGACY_USER_DATA_NAME = "spreadsheet-app";
+const USER_DATA_NAME = "PAPI";
+function pinUserDataPath(): void {
+  const appData = app.getPath("appData");
+  const target = join(appData, USER_DATA_NAME);
+  const legacy = join(appData, LEGACY_USER_DATA_NAME);
+  try {
+    if (!existsSync(target) && existsSync(legacy)) cpSync(legacy, target, { recursive: true });
+  } catch (error) {
+    // A failed copy shouldn't block launch — worst case is a fresh start.
+    console.error("User-data migration failed:", error);
+  }
+  app.setPath("userData", target);
+}
+pinUserDataPath();
+
+// Replace cezarhere with the GitHub account/org that hosts the repo (also in
+// package.json's homepage/repository).
+const REPO_URL = "https://github.com/cezarhere/papi";
+
+// Opens a pre-filled GitHub issue (version + OS already in the form) in the
+// user's browser. Nothing is sent from the app itself: the user reviews and
+// submits it on github.com, so no diagnostics leave the machine without
+// their say-so. Only our own https URL is ever passed to openExternal.
+function reportBug(): void {
+  const body = [
+    "**What happened?**",
+    "",
+    "**What did you expect?**",
+    "",
+    "**Steps to reproduce**",
+    "1. ",
+    "",
+    "---",
+    `PAPI ${app.getVersion()} · macOS (Darwin ${release()}) · ${process.arch}`,
+  ].join("\n");
+  const url = `${REPO_URL}/issues/new?labels=bug&body=${encodeURIComponent(body)}`;
+  void shell.openExternal(url);
+}
+
+const DEFAULT_SHORTCUT = "Option+'";
+// Persisted separately from the shortcut itself is not possible via
+// localStorage — the main process needs to know it *before* any renderer
+// exists, at app.whenReady() time, so this is a small JSON file in
+// Electron's own per-app data directory instead (settings popover's
+// "custom shortcut" recorder, Phase G).
+let currentShortcut = DEFAULT_SHORTCUT;
+
+function shortcutConfigPath(): string {
+  return join(app.getPath("userData"), "shortcut.json");
+}
+
+function loadPersistedShortcut(): string {
+  try {
+    const path = shortcutConfigPath();
+    if (!existsSync(path)) return DEFAULT_SHORTCUT;
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    if (parsed && typeof parsed === "object" && "accelerator" in parsed) {
+      const { accelerator } = parsed as { accelerator: unknown };
+      if (typeof accelerator === "string" && accelerator.length > 0) return accelerator;
+    }
+    return DEFAULT_SHORTCUT;
+  } catch {
+    // Corrupted/unreadable config is no worse than a fresh install —
+    // fall back rather than crashing the app over a preference file.
+    return DEFAULT_SHORTCUT;
+  }
+}
+
+function savePersistedShortcut(accelerator: string): void {
+  try {
+    writeFileSync(shortcutConfigPath(), JSON.stringify({ accelerator }));
+  } catch (error) {
+    // Read-only or full disk: the shortcut still works for this session,
+    // it just won't persist — not worth throwing inside an IPC handler.
+    console.error("Failed to persist shortcut:", error);
+  }
+}
+
+// Renderer input is untrusted as far as the main process is concerned —
+// validate shape before acting on it. Accelerators are short strings like
+// "Command+Shift+K"; anything else is rejected rather than registered.
+const ACCELERATOR_PATTERN = /^[A-Za-z0-9+'`\-=,./;\[\]\\ ]{1,40}$/;
+
+function isTrustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  return mainWindow !== null && event.sender === mainWindow.webContents;
+}
+
+// Unregisters whatever's currently bound and tries the new accelerator.
+// Only updates currentShortcut (and persists) on success — on failure the
+// old one is left registered and still works, so the app never ends up
+// with no working shortcut at all.
+function applyShortcut(accelerator: string): boolean {
+  globalShortcut.unregister(currentShortcut);
+  const registered = globalShortcut.register(accelerator, toggleWindow);
+  if (registered) {
+    currentShortcut = accelerator;
+    savePersistedShortcut(accelerator);
+    return true;
+  }
+  // Re-claim the old one so unregister() above didn't leave the app with
+  // nothing bound.
+  globalShortcut.register(currentShortcut, toggleWindow);
+  return false;
+}
+
+// A 44x44 (@2x of the standard 22x22 menu bar size) black percent-sign
+// glyph on a transparent background, inline rather than a separate asset
+// file — no icon-path resolution to get wrong across dev/build. Marked
+// as a template image below so macOS re-colors it (and inverts for dark
+// menu bars) automatically — that's also why it's plain black, not the
+// maroon/cream app-icon colors: template images ignore color entirely.
+const TRAY_ICON_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAACwAAAAsCAYAAAAehFoBAAADtklEQVR4nO1ZPWgUURD+9nbjT5GgRCUggijaRNBYJGBltBDBQosUIhFBziIWabSIGBBJo0UqBQuxEAsrsbCwMWhhghYmYiEY7ISIaIKgJjF3F3nwDU6Gt5f9u7MwA4+3e29m9tuZ2Xkz74A1WqMVFCAZT8nwLgOocc5KAcdyTj0rKMy5ntRQSQy3KmOJVtwI4AiAgwA2A/gC4DWA51x3oKtJH4i/VnXzbgAf1X1mS4vlzgCYVm7TYxLAccO/GpU4tgAYB7AEYAJAhwqRzGBHFDineF6NilobSAE64nyPsoucR8x6arD9CqgGp8cSQ8Fd9yYAHXI+QZnfHO56KAtgcUkrgBnGp4CdBXADQBnALQALCrSER0h31wuFTQA+UbfIfgDQliUk5O36FJgaP7JOw+ss+osWlpfqqWPliPMD4zmn/1AduUSAR6lonsqv8vcN5FnP+7tcnyf/oNEjJEBOKbBi3ZsxMquC1NRu3POWfBKzIjelZALKWSoR2FYAd/hiIv8OwHDatOiLuW9m99lP97XwQSHvDyiZZcr59NcA3AawjdcB5/PMEiKfmoqOYZlPe0LhunlmJioyS0jt0UHLVxXvG+WpTBtFI/KwWO6x0bOoQilrHVL4Tidgz3lC4YrhKYyy1hISCjsAzJlQeEW+XKFQdLUW0fpPARzjdcC5C8B7pbchlKYeFjdf8ITCJcPTUAoILFLDulVCYReAHyYUXqiXy50ViqBAWe6ZyQo/AezxbFJJjNAwErCDnlC4aHhyt11530g+oL2sLdYRqAM4BuCo+hAFTJVyhwF0c8ue44YyxrTZkA9T3Orml2Yz+Q5gp+q4BSyYCidjUuU0U6nmL4zEzZc9oVA2PCHnAQWuYjYjkdUtU+G74T7WFRX1wCcxYHu5rjOIHVpPf1GgJRRK3EB0KLhY3G5CoUR+CQMBtMBCqszCalaBrrEAa83TTcNYbtgTCmdjSsweBabK0lQKJqFO7qK63+szz0xNAqBL5VpR/sijPFIpT7ddrr0C262I7RfYjum2a9TqTINc3NLCcwVJV87lX/lBxaWjduPWKcrrBiBiOybP8rZdcW25jySHXmNNW1E63AbxWbU/cW2XkMjLbtfCe9eOQX2EvrYrVSh0U7EOhYd1vBX+ixgW97SxPNT93gzdJgclPio1O0vI2w15jphOpjii6m1WHo5MyyQHePfNej0Km7nTBaoDnqDicR6Z1guFONC5aomgyYfQYTOrtczH/IaaWg8X9UdK0KA/etbo/6M/pN+q/7Mh+woAAAAASUVORK5CYII=";
+
+let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+// Single-instance lock: a second launch (or the global shortcut firing
+// while already running) should show/focus the existing window, never
+// open a duplicate.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    showWindow();
+  });
+
+  // Explicit-dismiss only (no more hide-on-blur) — Escape, when the
+  // renderer decides nothing more specific (canceling an edit, clearing
+  // a copy highlight) should consume it first. See App.tsx.
+  ipcMain.on("window:hide-request", (event) => {
+    if (!isTrustedSender(event)) return;
+    mainWindow?.hide();
+  });
+
+  // Settings popover's "launch at login" toggle — request/response
+  // (invoke/handle), unlike the fire-and-forget channel above, since the
+  // renderer needs to read the *current* OS-level setting, not just push
+  // a change to it.
+  ipcMain.handle("login-item:get", (event) => {
+    if (!isTrustedSender(event)) return false;
+    return app.getLoginItemSettings().openAtLogin;
+  });
+  ipcMain.handle("login-item:set", (event, openAtLogin: unknown) => {
+    if (!isTrustedSender(event) || typeof openAtLogin !== "boolean") return;
+    app.setLoginItemSettings({ openAtLogin });
+  });
+
+  // Settings popover's shortcut recorder. set returns whether the new
+  // accelerator actually took — see applyShortcut's already-claimed-by-
+  // another-app fallback.
+  ipcMain.handle("shortcut:get", (event) => (isTrustedSender(event) ? currentShortcut : ""));
+  ipcMain.handle("shortcut:set", (event, accelerator: unknown) => {
+    if (!isTrustedSender(event)) return false;
+    if (typeof accelerator !== "string" || !ACCELERATOR_PATTERN.test(accelerator)) return false;
+    return applyShortcut(accelerator);
+  });
+
+  app.on("before-quit", () => {
+    isQuitting = true;
+  });
+
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+  });
+
+  // Background/menu-bar app convention: never quit just because a
+  // window closed — only the tray's Quit item (which sets isQuitting
+  // above before calling app.quit()) actually exits.
+  app.on("window-all-closed", () => {
+    // Intentionally empty — overrides Electron's default quit-when-
+    // windowless behavior.
+  });
+
+  app.whenReady().then(() => {
+    // No dock icon and no default application menu — this is a
+    // tray-only background app, not a normal dock/menu-bar app.
+    app.dock?.hide();
+    // Minimal menu rather than none: Cmd+C/V/X/A/Z are delivered through
+    // the Edit menu's roles on macOS, so with a null menu copy/paste can
+    // silently stop working in text fields. The menu bar itself stays
+    // hidden along with the Dock icon (accessory app).
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        { role: "editMenu" },
+        { label: "Window", submenu: [{ role: "close" }, { role: "minimize" }] },
+      ]),
+    );
+
+    createWindow();
+    createTray();
+    // applyShortcut's own failure path already re-registers whatever was
+    // previously bound (DEFAULT_SHORTCUT, at this point in startup) —
+    // it does *not* persist that fallback, so a saved custom shortcut
+    // that's temporarily unavailable (another app has it right now)
+    // stays in the config file for the next launch to retry, rather
+    // than getting silently overwritten with the default.
+    const attempted = loadPersistedShortcut();
+    const registered = applyShortcut(attempted);
+    if (!registered) {
+      console.error(
+        `Failed to register global shortcut "${attempted}" — likely already claimed by another app. ` +
+          `Falling back to "${currentShortcut}"${globalShortcut.isRegistered(currentShortcut) ? "" : " (also unavailable)"}.`,
+      );
+    }
+  });
+}
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 465,
+    height: 433,
+    show: false,
+    // Numi-style chrome: no separate native title bar (which macOS
+    // otherwise renders light/white regardless of app theme) — traffic
+    // lights float directly over the app's own dark background instead.
+    // backgroundColor matches --bg-primary (theme.css) so there's no
+    // white flash before the renderer paints, either.
+    titleBarStyle: "hiddenInset",
+    // Explicit rather than the OS default — the default position was
+    // colliding with the tab bar once that got shrunk (Phase E), and an
+    // explicit position means App.css's clearance padding can match it
+    // exactly instead of guessing at what macOS picked.
+    trafficLightPosition: { x: 14, y: 13 },
+    backgroundColor: "#1e1e1e",
+    webPreferences: {
+      // .cjs, forced in electron.vite.config.ts — a default-ESM preload
+      // (this project's "type": "module") silently fails to load at all
+      // under Electron's default-sandboxed renderer; see that config's
+      // comment for the full story.
+      preload: join(__dirname, "../preload/index.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  // The app is a single local page: never open new windows, and never
+  // navigate away from the bundled/dev-server origin.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const allowed = process.env.ELECTRON_RENDERER_URL;
+    if (!(allowed && url.startsWith(allowed)) && !url.startsWith("file://")) event.preventDefault();
+  });
+
+  // electron-vite sets this env var during `electron-vite dev`, pointing
+  // at the Vite dev server; a production build has no dev server, so it
+  // loads the bundled renderer output instead.
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  if (devServerUrl) {
+    mainWindow.loadURL(devServerUrl);
+  } else {
+    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  }
+
+  mainWindow.once("ready-to-show", () => {
+    if (mainWindow) showOnCurrentSpace(mainWindow);
+  });
+
+  // Same "hide, don't quit" rule for the window's own close button.
+  mainWindow.on("close", (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+}
+
+// Shows the window on whichever macOS Space the user is currently on,
+// instead of always jumping them to wherever the window last was (its
+// default behavior — normally a window belongs to one specific Space).
+// Briefly marking it visible on *every* Space right before show() is
+// what makes macOS place it on the current one; resetting that back to
+// false shortly after (not synchronously — see below) leaves it a
+// normal single-Space window the rest of the time, so it still behaves
+// like every other window in Mission Control/the Space switcher.
+//
+// A prior attempt at this broke the app (default Electron Dock icon
+// appeared, window went invisible). Root cause, confirmed this time by
+// actually checking the Dock after packaging: setVisibleOnAllWorkspaces
+// makes macOS run an "activation policy" transform on the app as a side
+// effect, independent of app.dock.hide() — which is exactly what pulls
+// the Dock icon back. skipTransformProcessType:true (on *both* calls
+// below) is Electron's documented way to suppress that transform; the
+// prior attempt didn't set it. Verified via a real packaged-app launch
+// (screenshot of the Dock — see conversation) that the icon now stays
+// hidden with this flag in place, not just by reasoning about the docs.
+//
+// Reset back to false on a short delay rather than synchronously —
+// macOS's Space assignment isn't necessarily synchronous with the
+// Electron call, so resetting before that settles risks the same kind
+// of race; isDestroyed() guards the rare case the window closes again
+// within that window.
+function showOnCurrentSpace(window: BrowserWindow): void {
+  window.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true,
+  });
+  window.show();
+  window.focus();
+  // Deterministic "the window is actually visible again" signal for the
+  // renderer (App.tsx re-focuses the active tab's primary input on
+  // this) — hide()/show() doesn't unmount the React tree, so a
+  // mount-only focus effect never re-runs on its own, and neither
+  // document.visibilitychange nor window's "focus" DOM event reliably
+  // fire for this specific hide/show cycle across platforms/Electron
+  // versions, so an explicit push here is the only fully reliable
+  // option.
+  window.webContents.send("window:shown");
+  setTimeout(() => {
+    if (!window.isDestroyed()) {
+      window.setVisibleOnAllWorkspaces(false, { skipTransformProcessType: true });
+    }
+  }, 100);
+}
+
+function showWindow(): void {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  showOnCurrentSpace(mainWindow);
+}
+
+function toggleWindow(): void {
+  if (mainWindow?.isVisible()) {
+    mainWindow.hide();
+  } else {
+    showWindow();
+  }
+}
+
+function createTray(): void {
+  // The embedded PNG is 44x44 (supersampled for a crisp downsample), but
+  // createFromDataURL has no way to know that's a @2x representation — it
+  // reports the image's *size* as 44x44 points, rendering it twice the
+  // intended menu-bar size. Resizing down to the actual 22x22 point size
+  // fixes that; the extra source resolution still buys a cleaner result
+  // than rasterizing at 22x22 to begin with.
+  const image = nativeImage
+    .createFromDataURL(`data:image/png;base64,${TRAY_ICON_BASE64}`)
+    .resize({ width: 22, height: 22 });
+  image.setTemplateImage(true);
+
+  tray = new Tray(image);
+  tray.setToolTip("PAPI");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Show", click: showWindow },
+      { type: "separator" },
+      { label: `PAPI ${app.getVersion()}`, enabled: false },
+      { label: "Report a Bug…", click: reportBug },
+      { label: "GitHub Page", click: () => void shell.openExternal(REPO_URL) },
+      { type: "separator" },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("click", toggleWindow);
+}

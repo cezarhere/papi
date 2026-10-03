@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+release/
+*.log
+.DS_Store
+.claude/settings.local.json
+tsconfig.tsbuildinfo
+.env
+*.p12
+*.p8
+*.cer
+.claude/

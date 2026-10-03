@@ -1,0 +1,76 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+  /* Removing the native title bar (electron/main/index.ts's
+     titleBarStyle: "hiddenInset") also removes its free window-drag
+     area, so this row takes over that job. left padding clears the
+     traffic-light buttons, which float over this same row — matches
+     electron/main/index.ts's explicit trafficLightPosition (x:14) plus
+     the cluster's own width, not a guess at the OS default. min-height
+     gives the buttons (fixed size, don't shrink with the tab text)
+     comfortable room instead of crowding against small tabs. */
+  padding-left: 88px;
+  -webkit-app-region: drag;
+}
+
+.tab {
+  /* Buttons need their own opt-out — a drag region otherwise swallows
+     their clicks entirely. */
+  -webkit-app-region: no-drag;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+}
+
+.tab.active {
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--text-accent);
+  background: var(--bg-primary);
+}
+
+.tab:focus-visible {
+  /* Replaces the OS default focus ring (an off-theme orange) with
+     something that matches the rest of the app's own accent styling. */
+  outline: 2px solid var(--text-accent);
+  outline-offset: -2px;
+}
+
+.tab-bar-right {
+  /* Pushes into the tab bar's otherwise-empty right side (the same row
+     used for window dragging) — margin-left: auto within the flex row
+     does the positioning. On the wrapper, not .tab-bar-toast itself,
+     since that only exists in the DOM while a toast is showing — the
+     settings gear needs to stay pinned right the rest of the time too. */
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.tab-bar-toast {
+  margin-right: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  -webkit-app-region: no-drag;
+}
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

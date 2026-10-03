@@ -1,0 +1,10 @@
+{
+  "base": "USD",
+  "currencies": {
+    "USD": { "symbol": "$", "rate": 1 },
+    "EUR": { "symbol": "€", "rate": 0.92 },
+    "GBP": { "symbol": "£", "rate": 0.79 },
+    "CHF": { "symbol": "CHF ", "rate": 0.88 },
+    "JPY": { "symbol": "¥", "rate": 155 }
+  }
+}
