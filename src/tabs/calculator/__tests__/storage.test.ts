@@ -44,6 +44,23 @@ describe("currency rates", () => {
     expect(rates.CHF).toBeUndefined();
     expect(rates.JPY).toBeUndefined();
   });
+  it("drops invalid entries from a cached rates blob and ignores a cache with no USD", async () => {
+    store.set(
+      "currency-rates-cache",
+      JSON.stringify({
+        fetchedAt: Date.now(),
+        rates: { USD: { symbol: "$", rate: 1 }, EUR: { symbol: "€", rate: 0 }, CHF: { symbol: "F", rate: "x" }, GBP: { symbol: "£", rate: 0.8 } },
+      }),
+    );
+    const { getCurrencyRates } = await import("../currencyRates");
+    const rates = getCurrencyRates();
+    expect(Object.keys(rates).sort()).toEqual(["GBP", "USD"]);
+
+    vi.resetModules();
+    store.set("currency-rates-cache", JSON.stringify({ fetchedAt: Date.now(), rates: { EUR: { symbol: "€", rate: 0.9 } } }));
+    const fresh = await import("../currencyRates");
+    expect(fresh.getCurrencyRates().EUR.rate).not.toBe(0.9); // fell back to bundled table
+  });
   it("keeps the previous rates when the request fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
     const { initCurrencyRates, getCurrencyRates } = await import("../currencyRates");

@@ -1,6 +1,6 @@
-import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { release } from "node:os";
 
@@ -14,15 +14,32 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // is left in place as a backup.
 const LEGACY_USER_DATA_NAME = "spreadsheet-app";
 const USER_DATA_NAME = "PAPI";
+// Only the app's own data is migrated (localStorage + the shortcut file) —
+// not Chromium's lock/socket files or caches, which can throw mid-copy when
+// the old build is still running. Copied into a temp folder and renamed on
+// success, so a failed or interrupted copy leaves no half-populated target
+// that a later launch would mistake for "already migrated".
+const MIGRATED_ENTRIES = ["Local Storage", "shortcut.json"];
 function pinUserDataPath(): void {
   const appData = app.getPath("appData");
   const target = join(appData, USER_DATA_NAME);
   const legacy = join(appData, LEGACY_USER_DATA_NAME);
+  const staging = `${target}.migrating`;
   try {
-    if (!existsSync(target) && existsSync(legacy)) cpSync(legacy, target, { recursive: true });
+    if (!existsSync(target) && existsSync(legacy)) {
+      rmSync(staging, { recursive: true, force: true });
+      mkdirSync(staging, { recursive: true });
+      for (const entry of MIGRATED_ENTRIES) {
+        const from = join(legacy, entry);
+        if (existsSync(from)) cpSync(from, join(staging, entry), { recursive: true });
+      }
+      renameSync(staging, target);
+    }
   } catch (error) {
-    // A failed copy shouldn't block launch — worst case is a fresh start.
+    // A failed copy shouldn't block launch — worst case is a fresh start
+    // (and the next launch retries, since target was never created).
     console.error("User-data migration failed:", error);
+    rmSync(staging, { recursive: true, force: true });
   }
   app.setPath("userData", target);
 }
@@ -147,7 +164,7 @@ if (!gotLock) {
   // a copy highlight) should consume it first. See App.tsx.
   ipcMain.on("window:hide-request", (event) => {
     if (!isTrustedSender(event)) return;
-    mainWindow?.hide();
+    hideWindow();
   });
 
   // Settings popover's "launch at login" toggle — request/response
@@ -175,6 +192,7 @@ if (!gotLock) {
 
   app.on("before-quit", () => {
     isQuitting = true;
+    mainWindow?.webContents.send("window:hiding");
   });
 
   app.on("will-quit", () => {
@@ -253,11 +271,15 @@ function createWindow(): void {
   });
 
   // The app is a single local page: never open new windows, and never
-  // navigate away from the bundled/dev-server origin.
+  // navigate anywhere but the app's own entry page. Exact-match, not a
+  // "file://" prefix — dropping a local .html file on the window triggers
+  // a navigation, and that page would otherwise load with the preload API
+  // (hide window, global shortcut, login item) and no CSP.
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const appEntryUrl = process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(join(__dirname, "../renderer/index.html")).href;
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    const allowed = process.env.ELECTRON_RENDERER_URL;
-    if (!(allowed && url.startsWith(allowed)) && !url.startsWith("file://")) event.preventDefault();
+    const isAppPage = url === appEntryUrl || (process.env.ELECTRON_RENDERER_URL !== undefined && url.startsWith(appEntryUrl));
+    if (!isAppPage) event.preventDefault();
   });
 
   // electron-vite sets this env var during `electron-vite dev`, pointing
@@ -278,7 +300,7 @@ function createWindow(): void {
   mainWindow.on("close", (event) => {
     if (!isQuitting) {
       event.preventDefault();
-      mainWindow?.hide();
+      hideWindow();
     }
   });
 
@@ -335,6 +357,14 @@ function showOnCurrentSpace(window: BrowserWindow): void {
   }, 100);
 }
 
+// Tells the renderer to flush any pending debounced autosave before the
+// window goes away — hiding doesn't unmount it, but a quit shortly after
+// would otherwise lose the last edits still waiting on the debounce timer.
+function hideWindow(): void {
+  mainWindow?.webContents.send("window:hiding");
+  mainWindow?.hide();
+}
+
 function showWindow(): void {
   if (!mainWindow) {
     createWindow();
@@ -345,7 +375,7 @@ function showWindow(): void {
 
 function toggleWindow(): void {
   if (mainWindow?.isVisible()) {
-    mainWindow.hide();
+    hideWindow();
   } else {
     showWindow();
   }

@@ -35,4 +35,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("window:shown", listener);
     return () => ipcRenderer.removeListener("window:shown", listener);
   },
+  // Fired just before the window hides or the app quits — flush pending
+  // debounced saves. Returns an unsubscribe function.
+  onWindowHiding(callback: () => void): () => void {
+    const listener = () => callback();
+    ipcRenderer.on("window:hiding", listener);
+    return () => ipcRenderer.removeListener("window:hiding", listener);
+  },
 });

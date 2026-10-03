@@ -12,8 +12,15 @@ spreadsheet behavior only.
 
 ## Grid sizing
 
+- **Revised again for the public release:** the cap grew from 25 x 7 to
+  50 rows x 26 columns, and the toolbar gained **Import CSV / Export CSV**
+  (export writes computed values; import replaces the sheet, is capped at
+  2 MB, and drops cells outside the grid with a warning; export prefixes
+  text starting with `= + - @` with an apostrophe to prevent CSV formula
+  injection). Cells outside the grid are also ignored when loading saved
+  documents. Auto-growing rows/columns remains a possible future change.
 - **Revised post-v1** (see CLAUDE.md/PROMPTS.md Phase 24): the grid always
-  renders its full fixed size — **25 rows x 7 columns** — regardless of
+  renders its full fixed size — **50 rows x 26 columns (A–Z)** — regardless of
   window size. The original v1 behavior (below) clamped the rendered
   row/col count to whatever fit the viewport, with no scrolling; that
   made the grid effectively shrink/"disappear" past its edges on a small
@@ -89,8 +96,8 @@ spreadsheet behavior only.
   clipboard support. Licensed GPLv3 for open-source use, which is fine
   since this project is being open-sourced.
 - **Grid UI: fully custom React component, not a grid library.** The
-  window-based auto-sizing behavior and the small max grid (7 × 25 = 175
-  cells) don't benefit from a general-purpose grid/virtualization library,
+  window-based auto-sizing behavior and the modest max grid (26 × 50 = 1,300
+  cells, all rendered) don't benefit from a general-purpose grid/virtualization library,
   and a custom component gives full control over the formula bar,
   selection, and formatting UI this spec needs.
 - **Formatting lives outside HyperFormula.** HyperFormula is a headless

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { addressKey, formatRangeReference, parseAddressKey } from "./spreadsheet/address";
 import { parseCsv, toCsv } from "./spreadsheet/csv";
 import { COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
@@ -92,15 +92,38 @@ export default function SpreadsheetTab() {
   }, []);
 
   // Autosaves to localStorage (CALC_SPEC.md "Autosave"), debounced so a
-  // burst of keystrokes/edits doesn't write on every single one.
+  // burst of keystrokes/edits doesn't write on every single one; flushed
+  // immediately on window hide / app quit / unload so the last edits
+  // aren't lost to the debounce interval.
+  const savePendingRef = useRef(false);
+  const flushSave = useCallback(() => {
+    if (!savePendingRef.current) return;
+    savePendingRef.current = false;
+    saveDocumentToStorage(buildDocument(exportCellsRef.current(), formattingRef.current));
+  }, []);
+  const formattingRef = useRef(formatting.formats);
+  formattingRef.current = formatting.formats;
+  const exportCellsRef = useRef(engine.exportCells);
+  exportCellsRef.current = engine.exportCells;
+
   useEffect(() => {
     if (!hasHydratedRef.current) return;
-    const timeoutId = window.setTimeout(() => {
-      saveDocumentToStorage(buildDocument(engine.exportCells(), formatting.formats));
-    }, AUTOSAVE_DEBOUNCE_MS);
+    savePendingRef.current = true;
+    const timeoutId = window.setTimeout(flushSave, AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.revision, formatting.formats]);
+  }, [engine.revision, formatting.formats, flushSave]);
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", flushSave);
+    window.addEventListener("pagehide", flushSave);
+    const unsubscribe = window.electronAPI?.onWindowHiding(flushSave);
+    return () => {
+      window.removeEventListener("beforeunload", flushSave);
+      window.removeEventListener("pagehide", flushSave);
+      unsubscribe?.();
+      flushSave();
+    };
+  }, [flushSave]);
 
   // Focus the grid on mount, and whenever an edit ends, so arrow keys keep
   // working — committing/canceling unmounts the cell's <input>, which would

@@ -24,7 +24,18 @@ function loadCache(): RateCache | null {
     if (typeof fetchedAt !== "number" || typeof rates !== "object" || rates === null) {
       return null;
     }
-    return { fetchedAt, rates: rates as Record<string, CurrencyRate> };
+    // Validate every entry, not just the envelope: a cache written by an
+    // older build (or edited by hand) could hold a zero/negative/non-numeric
+    // rate, which would look "fresh" for 24h and corrupt every conversion.
+    const valid: Record<string, CurrencyRate> = {};
+    for (const [code, entry] of Object.entries(rates as Record<string, unknown>)) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const { symbol, rate } = entry as Record<string, unknown>;
+      if (typeof symbol !== "string" || typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) continue;
+      valid[code] = { symbol, rate };
+    }
+    if (!valid.USD) return null;
+    return { fetchedAt, rates: valid };
   } catch {
     return null;
   }

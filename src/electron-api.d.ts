@@ -9,5 +9,6 @@ interface Window {
     getShortcut(): Promise<string>;
     setShortcut(accelerator: string): Promise<boolean>;
     onWindowShown(callback: () => void): () => void;
+    onWindowHiding(callback: () => void): () => void;
   };
 }

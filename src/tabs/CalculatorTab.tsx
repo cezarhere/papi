@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -193,13 +194,36 @@ export default function CalculatorTab() {
   // Autosaves to localStorage (CALC_SPEC.md "Autosave"), debounced so a
   // burst of keystrokes doesn't write on every single one. Lines are
   // restored synchronously in the initial state above, so there's no
-  // empty-then-loaded transition to guard against here.
+  // empty-then-loaded transition to guard against here. A pending save is
+  // also flushed immediately when the window hides, the app quits, or the
+  // page unloads — otherwise edits made in the last debounce interval
+  // would be lost.
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const savePendingRef = useRef(false);
+  const flushSave = useCallback(() => {
+    if (!savePendingRef.current) return;
+    savePendingRef.current = false;
+    saveCalculatorState(linesRef.current.map((line) => line.raw));
+  }, []);
+
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      saveCalculatorState(lines.map((line) => line.raw));
-    }, AUTOSAVE_DEBOUNCE_MS);
+    savePendingRef.current = true;
+    const timeoutId = window.setTimeout(flushSave, AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [lines]);
+  }, [lines, flushSave]);
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", flushSave);
+    window.addEventListener("pagehide", flushSave);
+    const unsubscribe = window.electronAPI?.onWindowHiding(flushSave);
+    return () => {
+      window.removeEventListener("beforeunload", flushSave);
+      window.removeEventListener("pagehide", flushSave);
+      unsubscribe?.();
+      flushSave();
+    };
+  }, [flushSave]);
 
   function handleChange(id: string, value: string) {
     setSelectionAnchorIndex(null);
