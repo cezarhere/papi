@@ -3,13 +3,32 @@
 A small macOS menu-bar app with two tabs, always one shortcut away
 (default **⌥'**):
 
-- **Calculator** — a Numi-style notepad: type natural-language math and
-  see live results next to each line. Variables, `prev`, `sum`/`average`/
-  `min`/`max`, percentages (`20% of 80`, `rent increased by 5%`), unit
-  conversions (`5 lb to kg`), currencies (`1 usd to chf`), durations and
-  dates (`next friday`, `today + 14 days`).
-- **Spreadsheet** — a compact 25×7 grid with formulas (powered by
-  HyperFormula), copy/paste, fill-down, undo/redo, bold/italic and fills.
+- **Calculator** — a Numi-style notepad: type natural-language math on
+  each line and see live results next to it.
+  - Arithmetic: `+ - * / ^`, parentheses, `mod`, and functions such as
+    `sqrt`, `abs`, `round`, `floor`, `ceil`, `log`, `exp`, `sin`/`cos`/`tan`,
+    `factorial`; constants `pi`, `e`.
+  - Variables and labels: `x = 5`, `Rent: 1200`, `item 2000`; `prev` is the
+    last result.
+  - Blocks (separated by a blank line): `sum`, `average`, `min`, `max`,
+    usable alone or inside an expression (`sum - 100`).
+  - Percentages: `20% of 80`, `100 increased by 20%`, `100 + 10%`, and with
+    a variable or `prev` as the base (`rent increased by 5%`).
+  - Units: mass, length, volume, time, temperature, data, area, speed
+    (`5 lb to kg`, `60 mi/h to km/h`, `100 m2 to sqft`), and duration
+    math (`2h + 35min`).
+  - Currencies: `1 usd to chf` (USD, EUR, GBP, CHF, JPY; live daily rates).
+  - Dates: `today`, `next friday`, `3 months ago`, `today + 14 days`.
+  - Click a result to copy it. Drag the divider to resize the columns; long
+    lines wrap. Precision (0–10 decimals) is a setting.
+- **Spreadsheet** — a 50-row × 26-column (A–Z) grid with formulas (powered
+  by HyperFormula: `SUM`, `AVERAGE`, `COUNT`, `MIN`, `MAX`, `IF` and many
+  more), cell references and ranges, formula-bar editing, copy/paste with
+  relative references, fill-down, undo/redo, bold/italic and fill colors,
+  and CSV import/export.
+- **App** — lives in the menu bar, toggles with a global shortcut (default
+  ⌥', changeable in Settings), optional launch at login, remembers your last
+  tab, and opens on whichever Space you're on.
 
 Everything is saved automatically on your Mac.
 
