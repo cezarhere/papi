@@ -50,10 +50,18 @@ Everything is saved automatically on your Mac.
 
 ## Install
 
-Download the latest `.dmg` from the
-[Releases](../../releases) page, open it and drag PAPI to Applications.
-Builds are signed and notarized by Apple. Apple Silicon and Intel are
-both supported (macOS 12+).
+Download the latest version (these links always point at the newest
+release):
+
+- **Apple Silicon** (M1 and later):
+  [PAPI-arm64.dmg](https://github.com/cezarhere/papi/releases/latest/download/PAPI-arm64.dmg)
+- **Intel Macs:**
+  [PAPI-x64.dmg](https://github.com/cezarhere/papi/releases/latest/download/PAPI-x64.dmg)
+
+Not sure which? Apple menu → About This Mac: "Chip: Apple M…" is Apple
+Silicon, "Processor: Intel…" is Intel. Open the file and drag PAPI to
+Applications. All releases are on the [Releases](../../releases) page. Builds
+are signed and notarized by Apple, so they open without security warnings.
 
 ## Privacy
 

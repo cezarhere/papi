@@ -41,9 +41,33 @@ jobs:
       - name: Write API key
         run: |
           printf '%s' "${{ secrets.APPLE_API_KEY }}" > "${{ runner.temp }}/AuthKey.p8"
-      - run: npm run dist -- --publish always
+      # Build only (no electron-builder upload): its parallel uploads raced and
+      # created two draft releases, and uploaded DMGs *before* the hook that
+      # notarizes and staples them had run, so the published files had no
+      # stapled ticket. Uploading ourselves afterwards fixes both.
+      - name: Build, sign and notarize
+        run: npm run dist -- --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      - name: Verify DMGs are notarized and stapled
+        run: |
+          for f in release/*.dmg; do
+            xcrun stapler validate "$f"
+          done
+      # One draft release, created once. File names have no version in them
+      # (PAPI-arm64.dmg, PAPI-x64.dmg), so
+      #   https://github.com/<owner>/<repo>/releases/latest/download/PAPI-arm64.dmg
+      # always serves the newest published release. Published manually.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          FILES=(release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${FILES[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${FILES[@]}" --draft --title "PAPI ${GITHUB_REF_NAME#v}" --generate-notes
+          fi
