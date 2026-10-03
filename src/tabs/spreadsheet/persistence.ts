@@ -1,4 +1,5 @@
 import type { CellRawValue } from "./useSpreadsheetEngine";
+import { isNumberFormat, MAX_DECIMALS } from "./numberFormat";
 import type { CellFormat } from "./types";
 
 const DOCUMENT_VERSION = 1;
@@ -7,13 +8,16 @@ export interface SpreadsheetDocument {
   version: number;
   cells: Record<string, CellRawValue>;
   formats: Record<string, CellFormat>;
+  // Column index (as a string key) -> width in px. Absent = default width.
+  columnWidths: Record<string, number>;
 }
 
 export function buildDocument(
   cells: Record<string, CellRawValue>,
   formats: Record<string, CellFormat>,
+  columnWidths: Record<string, number> = {},
 ): SpreadsheetDocument {
-  return { version: DOCUMENT_VERSION, cells, formats };
+  return { version: DOCUMENT_VERSION, cells, formats, columnWidths };
 }
 
 const AUTOSAVE_KEY = "spreadsheet-autosave";
@@ -42,7 +46,10 @@ function isCellFormat(value: unknown): value is CellFormat {
   return (
     (format.bold === undefined || typeof format.bold === "boolean") &&
     (format.italic === undefined || typeof format.italic === "boolean") &&
-    (format.fill === undefined || typeof format.fill === "string")
+    (format.fill === undefined || typeof format.fill === "string") &&
+    (format.numberFormat === undefined || isNumberFormat(format.numberFormat)) &&
+    (format.decimals === undefined ||
+      (Number.isInteger(format.decimals) && (format.decimals as number) >= 0 && (format.decimals as number) <= MAX_DECIMALS))
   );
 }
 
@@ -85,5 +92,15 @@ export function parseDocument(json: string): SpreadsheetDocument {
     }
   }
 
-  return { version: DOCUMENT_VERSION, cells, formats };
+  const columnWidths: Record<string, number> = {};
+  if (candidate.columnWidths !== undefined) {
+    if (typeof candidate.columnWidths !== "object" || candidate.columnWidths === null) {
+      throw new Error("That file's \"columnWidths\" field is malformed.");
+    }
+    for (const [key, value] of Object.entries(candidate.columnWidths as Record<string, unknown>)) {
+      if (/^\d+$/.test(key) && typeof value === "number" && Number.isFinite(value)) columnWidths[key] = value;
+    }
+  }
+
+  return { version: DOCUMENT_VERSION, cells, formats, columnWidths };
 }

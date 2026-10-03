@@ -1,7 +1,8 @@
 import { Fragment, type MouseEvent, type RefObject } from "react";
 import { addressKey } from "./address";
 import Cell from "./Cell";
-import { CELL_HEIGHT, CELL_WIDTH, COL_HEADER_HEIGHT, ROW_HEADER_WIDTH } from "./constants";
+import { CELL_HEIGHT, COL_HEADER_HEIGHT, ROW_HEADER_WIDTH } from "./constants";
+import { clampWidth } from "./useColumnWidths";
 import { isCellInBounds, type RangeBounds } from "./range";
 import type { CellAddress, CellFormat, EditingState } from "./types";
 import { columnLabel } from "./utils";
@@ -17,6 +18,11 @@ interface GridProps {
   formulaRefBounds: RangeBounds | null;
   isDragging: boolean;
   displayValues: Record<string, string>;
+  // Keys of cells whose computed value is a number (right-aligned).
+  numericKeys: ReadonlySet<string>;
+  getColumnWidth: (col: number) => number;
+  onColumnResize: (col: number, width: number) => void;
+  onColumnAutoFit: (col: number) => void;
   getFormat: (address: CellAddress) => CellFormat;
   editing: EditingState | null;
   editingInputRef: RefObject<HTMLInputElement>;
@@ -37,6 +43,10 @@ export default function Grid({
   formulaRefBounds,
   isDragging,
   displayValues,
+  numericKeys,
+  getColumnWidth,
+  onColumnResize,
+  onColumnAutoFit,
   getFormat,
   editing,
   editingInputRef,
@@ -49,11 +59,32 @@ export default function Grid({
   const columns = Array.from({ length: cols }, (_, i) => i);
   const rowIndexes = Array.from({ length: rows }, (_, i) => i);
 
+  // Drag the right edge of a column header to resize it. Window-level
+  // listeners so the drag keeps tracking when the cursor leaves the thin
+  // handle; document.body's cursor is pinned for the duration.
+  function startColumnResize(col: number, e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = getColumnWidth(col);
+    document.body.style.cursor = "col-resize";
+    function onMove(ev: globalThis.MouseEvent) {
+      onColumnResize(col, clampWidth(startWidth + ev.clientX - startX));
+    }
+    function onUp() {
+      document.body.style.cursor = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   return (
     <div
       className="grid"
       style={{
-        gridTemplateColumns: `${ROW_HEADER_WIDTH}px repeat(${cols}, ${CELL_WIDTH}px)`,
+        gridTemplateColumns: `${ROW_HEADER_WIDTH}px ${columns.map((col) => `${getColumnWidth(col)}px`).join(" ")}`,
         gridTemplateRows: `${COL_HEADER_HEIGHT}px repeat(${rows}, ${CELL_HEIGHT}px)`,
       }}
     >
@@ -61,6 +92,15 @@ export default function Grid({
       {columns.map((col) => (
         <div key={`col-${col}`} className="grid-header grid-header-col">
           {columnLabel(col)}
+          <div
+            className="grid-col-resize-handle"
+            onMouseDown={(e) => startColumnResize(col, e)}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onColumnAutoFit(col);
+            }}
+            title="Drag to resize, double-click to fit"
+          />
         </div>
       ))}
 
@@ -94,6 +134,7 @@ export default function Grid({
                 isFillPreview={isFillPreview}
                 isCopied={isCopied}
                 isFormulaRef={isFormulaRef}
+                isNumeric={numericKeys.has(addressKey(address))}
                 showFillHandle={showFillHandle}
                 editing={isEditing}
                 editValue={editing !== null && isEditing ? editing.value : ""}

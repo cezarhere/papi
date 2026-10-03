@@ -12,6 +12,9 @@ interface CellProps {
   isFillPreview: boolean;
   isCopied: boolean;
   isFormulaRef: boolean;
+  // Numeric results are right-aligned (spreadsheet convention, and what
+  // makes a column of figures readable in a screenshot).
+  isNumeric: boolean;
   showFillHandle: boolean;
   editing: boolean;
   editValue: string;
@@ -37,6 +40,7 @@ export default function Cell({
   isFillPreview,
   isCopied,
   isFormulaRef,
+  isNumeric,
   showFillHandle,
   editing,
   editValue,
@@ -66,6 +70,7 @@ export default function Cell({
   if (isFillPreview) classNames.push("grid-cell-fill-preview");
   if (isCopied) classNames.push("grid-cell-copied");
   if (isFormulaRef) classNames.push("grid-cell-formula-ref");
+  if (isNumeric && !editing) classNames.push("grid-cell-numeric");
 
   const style: CSSProperties = {};
   if (format.fill) {

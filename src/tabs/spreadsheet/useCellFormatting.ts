@@ -5,7 +5,7 @@ import type { CellAddress, CellFormat } from "./types";
 const EMPTY_FORMAT: CellFormat = {};
 
 function isEmptyFormat(format: CellFormat): boolean {
-  return !format.bold && !format.italic && !format.fill;
+  return !format.bold && !format.italic && !format.fill && !format.numberFormat;
 }
 
 // Before/after snapshot of the cells touched by one applyFormat call, keyed

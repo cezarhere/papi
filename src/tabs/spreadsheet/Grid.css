@@ -97,3 +97,25 @@
   cursor: crosshair;
   z-index: 2;
 }
+
+.grid-cell-numeric {
+  justify-content: flex-end;
+}
+
+/* Grab zone on the right edge of each column header. Wider than the 1px
+   border it sits on so it's easy to hit; the headers are position: sticky
+   (so already a positioning context for this absolute child). */
+.grid-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.grid-col-resize-handle:hover {
+  background: var(--text-accent);
+  opacity: 0.5;
+}

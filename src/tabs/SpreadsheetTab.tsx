@@ -10,7 +10,11 @@ import Toolbar from "./spreadsheet/Toolbar";
 import type { CellAddress, CellFormat, CellRange, EditingState } from "./spreadsheet/types";
 import { useCellFormatting, type FormatSnapshot } from "./spreadsheet/useCellFormatting";
 import { useSpreadsheetEngine } from "./spreadsheet/useSpreadsheetEngine";
-import { clamp } from "./spreadsheet/utils";
+import { clamp, columnLabel } from "./spreadsheet/utils";
+import { defaultDecimals, formatNumberValue, formatPlainNumber, MAX_DECIMALS, type NumberFormat } from "./spreadsheet/numberFormat";
+import { summarize } from "./spreadsheet/summary";
+import { clampWidth, useColumnWidths } from "./spreadsheet/useColumnWidths";
+import { useToast } from "../ToastContext";
 
 const rows = MAX_ROWS;
 const cols = MAX_COLS;
@@ -52,6 +56,8 @@ export default function SpreadsheetTab() {
   const containerRef = useRef<HTMLDivElement>(null);
   const engine = useSpreadsheetEngine();
   const formatting = useCellFormatting();
+  const columnWidths = useColumnWidths();
+  const showToast = useToast();
   const editingInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<CellRange>({
     anchor: { row: 0, col: 0 },
@@ -84,6 +90,7 @@ export default function SpreadsheetTab() {
     if (saved) {
       engine.importCells(saved.cells);
       formatting.replaceAll(saved.formats);
+      columnWidths.replaceAll(saved.columnWidths);
     }
     hasHydratedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,10 +104,12 @@ export default function SpreadsheetTab() {
   const flushSave = useCallback(() => {
     if (!savePendingRef.current) return;
     savePendingRef.current = false;
-    saveDocumentToStorage(buildDocument(exportCellsRef.current(), formattingRef.current));
+    saveDocumentToStorage(buildDocument(exportCellsRef.current(), formattingRef.current, columnWidthsRef.current));
   }, []);
   const formattingRef = useRef(formatting.formats);
   formattingRef.current = formatting.formats;
+  const columnWidthsRef = useRef(columnWidths.widths);
+  columnWidthsRef.current = columnWidths.widths;
   const exportCellsRef = useRef(engine.exportCells);
   exportCellsRef.current = engine.exportCells;
 
@@ -109,7 +118,7 @@ export default function SpreadsheetTab() {
     savePendingRef.current = true;
     const timeoutId = window.setTimeout(flushSave, AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [engine.revision, formatting.formats, flushSave]);
+  }, [engine.revision, formatting.formats, columnWidths.widths, flushSave]);
 
   useEffect(() => {
     window.addEventListener("beforeunload", flushSave);
@@ -302,6 +311,47 @@ export default function SpreadsheetTab() {
       fill: allSameFill ? undefined : color,
     }));
     pushHistory({ type: "format", before, after });
+  }
+
+  function handleSetNumberFormat(format: NumberFormat | "general") {
+    const addresses = selectedAddresses();
+    const { before, after } = formatting.applyFormat(addresses, (current) => ({
+      ...current,
+      numberFormat: format === "general" ? undefined : format,
+      // Switching format starts from that format's default precision.
+      decimals: undefined,
+    }));
+    pushHistory({ type: "format", before, after });
+  }
+
+  // Excel-style: "more decimals" on a General cell turns it into a plain
+  // Number first, so the button always does something visible.
+  function handleChangeDecimals(delta: 1 | -1) {
+    const addresses = selectedAddresses();
+    const { before, after } = formatting.applyFormat(addresses, (current) => {
+      const numberFormat = current.numberFormat ?? "number";
+      const base = current.decimals ?? defaultDecimals(numberFormat);
+      return { ...current, numberFormat, decimals: clamp(base + delta, 0, MAX_DECIMALS) };
+    });
+    pushHistory({ type: "format", before, after });
+  }
+
+  // Double-click on a column's resize edge: size it to its widest content
+  // (measured in the grid's own font), within the min/max width limits.
+  function handleColumnAutoFit(col: number) {
+    const grid = containerRef.current?.querySelector(".grid");
+    if (!grid) return;
+    const style = getComputedStyle(grid);
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context) return;
+    context.font = `${style.fontSize} ${style.fontFamily}`;
+    let widest = context.measureText(columnLabel(col)).width;
+    for (let row = 0; row < rows; row++) {
+      const text = displayValues[addressKey({ row, col })];
+      if (text) widest = Math.max(widest, context.measureText(text).width);
+    }
+    // 8px horizontal padding + 1px border + a little room for the fill handle.
+    columnWidths.setWidth(col, clampWidth(widest + 20));
   }
 
   // Inserts `address`'s reference into the formula being edited, at the
@@ -502,12 +552,40 @@ export default function SpreadsheetTab() {
   // Computed display values for every visible cell. Cheap enough to
   // recompute on every render given the grid is capped at 7 x 25.
   const displayValues: Record<string, string> = {};
+  const numericKeys = new Set<string>();
+  const numericValues: Record<string, number> = {};
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const address = { row, col };
-      displayValues[addressKey(address)] = engine.getDisplayValue(address);
+      const key = addressKey(address);
+      const number = engine.getNumber(address);
+      if (number === null) {
+        displayValues[key] = engine.getDisplayValue(address);
+        continue;
+      }
+      numericKeys.add(key);
+      numericValues[key] = number;
+      const format = formatting.getFormat(address);
+      displayValues[key] = format.numberFormat
+        ? formatNumberValue(number, format.numberFormat, format.decimals)
+        : engine.getDisplayValue(address);
     }
   }
+
+  // Status-bar stats over the numbers in the selection (only shown for a
+  // multi-cell selection — a single cell already shows its own value).
+  const selectedNumbers: number[] = [];
+  const multiCellSelection =
+    selectionBounds.maxRow > selectionBounds.minRow || selectionBounds.maxCol > selectionBounds.minCol;
+  if (multiCellSelection) {
+    for (let row = selectionBounds.minRow; row <= selectionBounds.maxRow; row++) {
+      for (let col = selectionBounds.minCol; col <= selectionBounds.maxCol; col++) {
+        const value = numericValues[addressKey({ row, col })];
+        if (value !== undefined) selectedNumbers.push(value);
+      }
+    }
+  }
+  const summary = summarize(selectedNumbers);
 
   const fillPreviewBounds: RangeBounds | null =
     dragMode === "fill" && fillPreviewEndRow !== null && fillPreviewEndRow > selectionBounds.maxRow
@@ -534,6 +612,8 @@ export default function SpreadsheetTab() {
         onToggleBold={() => applyToggle("bold")}
         onToggleItalic={() => applyToggle("italic")}
         onSetFill={handleSetFill}
+        onSetNumberFormat={handleSetNumberFormat}
+        onChangeDecimals={handleChangeDecimals}
       />
       <FormulaBar
         addressLabel={activeCellKey}
@@ -558,6 +638,10 @@ export default function SpreadsheetTab() {
           formulaRefBounds={formulaRefBounds}
           isDragging={dragMode !== null}
           displayValues={displayValues}
+          numericKeys={numericKeys}
+          getColumnWidth={columnWidths.getWidth}
+          onColumnResize={columnWidths.setWidth}
+          onColumnAutoFit={handleColumnAutoFit}
           getFormat={formatting.getFormat}
           editing={editing}
           editingInputRef={editingInputRef}
@@ -568,6 +652,32 @@ export default function SpreadsheetTab() {
           onEditValueChange={handleEditValueChange}
         />
       </div>
+      {summary && (
+        <div className="summary-bar" aria-live="polite">
+          {(
+            [
+              ["Sum", summary.sum],
+              ["Average", summary.average],
+              ["Count", summary.count],
+              ["Min", summary.min],
+              ["Max", summary.max],
+            ] as const
+          ).map(([label, value]) => (
+            <button
+              key={label}
+              type="button"
+              className="summary-stat"
+              title={`Click to copy ${label.toLowerCase()}`}
+              onClick={() => {
+                void navigator.clipboard.writeText(String(value));
+                showToast("Copied");
+              }}
+            >
+              <span className="summary-label">{label}</span> {formatPlainNumber(value)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

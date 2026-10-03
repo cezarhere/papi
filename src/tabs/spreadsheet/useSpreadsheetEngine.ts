@@ -40,6 +40,9 @@ function toSimpleCellRange(sheet: number, bounds: RangeBounds): SimpleCellRange 
 export interface SpreadsheetEngine {
   // Computed value for the grid — e.g. "3" for a cell containing "=1+2".
   getDisplayValue(address: CellAddress): string;
+  // The computed value if (and only if) it's a number — what number
+  // formatting and the selection summary operate on. Text/errors/blank: null.
+  getNumber(address: CellAddress): number | null;
   // Raw content for the formula bar — e.g. "=1+2" for that same cell.
   getRawInput(address: CellAddress): string;
   setCellContent(address: CellAddress, rawInput: string): void;
@@ -97,6 +100,14 @@ export function useSpreadsheetEngine(): SpreadsheetEngine {
       if (value === null) return "";
       if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
       return String(value);
+    },
+    [engine, sheetId],
+  );
+
+  const getNumber = useCallback(
+    (address: CellAddress): number | null => {
+      const value = engine.getCellValue(toSimpleCellAddress(sheetId, address));
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
     },
     [engine, sheetId],
   );
@@ -229,6 +240,7 @@ export function useSpreadsheetEngine(): SpreadsheetEngine {
 
   return {
     getDisplayValue,
+    getNumber,
     getRawInput,
     setCellContent,
     copyRange,

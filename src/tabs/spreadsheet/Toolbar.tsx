@@ -1,3 +1,4 @@
+import { NUMBER_FORMAT_OPTIONS, type NumberFormat } from "./numberFormat";
 import type { CellFormat } from "./types";
 import "./Toolbar.css";
 
@@ -13,6 +14,8 @@ interface ToolbarProps {
   onToggleBold: () => void;
   onToggleItalic: () => void;
   onSetFill: (color: string) => void;
+  onSetNumberFormat: (format: NumberFormat | "general") => void;
+  onChangeDecimals: (delta: 1 | -1) => void;
 }
 
 export default function Toolbar({
@@ -20,6 +23,8 @@ export default function Toolbar({
   onToggleBold,
   onToggleItalic,
   onSetFill,
+  onSetNumberFormat,
+  onChangeDecimals,
 }: ToolbarProps) {
   return (
     <div className="toolbar">
@@ -59,6 +64,38 @@ export default function Toolbar({
           title={`${label} fill`}
         />
       ))}
+      <div className="toolbar-divider" />
+      <select
+        className="toolbar-select"
+        value={activeFormat.numberFormat ?? "general"}
+        onChange={(e) => onSetNumberFormat(e.target.value as NumberFormat | "general")}
+        title="Number format"
+        aria-label="Number format"
+      >
+        {NUMBER_FORMAT_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="toolbar-button"
+        onClick={() => onChangeDecimals(-1)}
+        title="Fewer decimal places"
+        aria-label="Fewer decimal places"
+      >
+        .0&#8592;
+      </button>
+      <button
+        type="button"
+        className="toolbar-button"
+        onClick={() => onChangeDecimals(1)}
+        title="More decimal places"
+        aria-label="More decimal places"
+      >
+        .00&#8594;
+      </button>
     </div>
   );
 }

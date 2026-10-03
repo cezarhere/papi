@@ -1,3 +1,5 @@
+import type { NumberFormat } from "./numberFormat";
+
 export interface CellAddress {
   row: number;
   col: number;
@@ -28,4 +30,9 @@ export interface CellFormat {
   bold?: boolean;
   italic?: boolean;
   fill?: string;
+  // Display-only: how a *numeric* result is shown (the engine keeps the
+  // raw number). Undefined means "General" — shown as the engine returns it.
+  numberFormat?: NumberFormat;
+  // Fixed decimal places; undefined uses the format's default.
+  decimals?: number;
 }

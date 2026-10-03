@@ -33,6 +33,21 @@ describe("spreadsheet persistence", () => {
     const doc = buildDocument({ A1: 1, B2: "=A1*2", C3: "hi", D4: true, E5: null }, { A1: { bold: true, fill: "#ff0" } });
     expect(parseDocument(JSON.stringify(doc))).toEqual(doc);
   });
+  it("round-trips number formats and column widths, and rejects bad ones", () => {
+    const doc = buildDocument({ A1: 1 }, { A1: { numberFormat: "usd", decimals: 0 } }, { "2": 140 });
+    expect(parseDocument(JSON.stringify(doc))).toEqual(doc);
+    const parsed = parseDocument(
+      JSON.stringify({
+        formats: { A1: { numberFormat: "bogus" }, B1: { decimals: 99 }, C1: { decimals: 1.5 }, D1: { numberFormat: "percent", decimals: 3 } },
+        columnWidths: { "0": 100, x: 5, "1": "wide", "2": null },
+      }),
+    );
+    expect(parsed.formats).toEqual({ D1: { numberFormat: "percent", decimals: 3 } });
+    expect(parsed.columnWidths).toEqual({ "0": 100 });
+  });
+  it("older saved documents without columnWidths still load", () => {
+    expect(parseDocument(JSON.stringify({ cells: { A1: 1 }, formats: {} })).columnWidths).toEqual({});
+  });
   it("drops invalid cells/formats instead of applying garbage", () => {
     const parsed = parseDocument(JSON.stringify({ cells: { A1: { x: 1 }, B1: 2 }, formats: { A1: { bold: "yes" }, B1: { italic: true } } }));
     expect(parsed.cells).toEqual({ B1: 2 });

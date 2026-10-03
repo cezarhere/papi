@@ -63,3 +63,20 @@
 .toolbar-swatch-active {
   border-color: var(--text-accent);
 }
+
+.toolbar-select {
+  height: 24px;
+  max-width: 120px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.toolbar-select:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: -2px;
+}

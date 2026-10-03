@@ -49,17 +49,17 @@ pinUserDataPath();
 // package.json's homepage/repository).
 const REPO_URL = "https://github.com/cezarhere/papi";
 
-// Opens a pre-filled GitHub issue (version + OS already in the form) in the
-// user's browser. Nothing is sent from the app itself: the user reviews and
+// Opens a pre-filled problem report (version + macOS already filled in) in
+// the user's browser. Nothing is sent from the app itself: the user reviews and
 // submits it on github.com, so no diagnostics leave the machine without
 // their say-so. Only our own https URL is ever passed to openExternal.
 function reportBug(): void {
   const body = [
     "**What happened?**",
     "",
-    "**What did you expect?**",
+    "**What did you expect to happen?**",
     "",
-    "**Steps to reproduce**",
+    "**How can we make it happen again?**",
     "1. ",
     "",
     "---",
@@ -400,8 +400,7 @@ function createTray(): void {
       { label: "Show", click: showWindow },
       { type: "separator" },
       { label: `PAPI ${app.getVersion()}`, enabled: false },
-      { label: "Report a Bug…", click: reportBug },
-      { label: "GitHub Page", click: () => void shell.openExternal(REPO_URL) },
+      { label: "Report a Problem…", click: reportBug },
       { type: "separator" },
       {
         label: "Quit",
