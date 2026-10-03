@@ -12,6 +12,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // before app "ready" (and before any renderer touches localStorage, which
 // lives inside this folder). One-time copy, never a move: the old folder
 // is left in place as a backup.
+// Display name (menu items like "Quit PAPI", About). Electron otherwise
+// takes package.json's lowercase "name". The data folder is pinned
+// explicitly below, so this doesn't move any saved data.
+app.setName("PAPI");
+
 const LEGACY_USER_DATA_NAME = "spreadsheet-app";
 const USER_DATA_NAME = "PAPI";
 // Only the app's own data is migrated (localStorage + the shortcut file) —
@@ -213,10 +218,13 @@ if (!gotLock) {
     app.dock?.hide();
     // Minimal menu rather than none: Cmd+C/V/X/A/Z are delivered through
     // the Edit menu's roles on macOS, so with a null menu copy/paste can
-    // silently stop working in text fields. The menu bar itself stays
-    // hidden along with the Dock icon (accessory app).
+    // silently stop working in text fields. The first menu is the app menu
+    // and needs a Quit item, or Cmd+Q does nothing (the shortcut is just
+    // that menu item's accelerator). Quit goes through app.quit(), whose
+    // before-quit handler lets the window close instead of hiding.
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
+        { label: "PAPI", submenu: [{ role: "quit" }] },
         { role: "editMenu" },
         { label: "Window", submenu: [{ role: "close" }, { role: "minimize" }] },
       ]),

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { addressKey, formatRangeReference } from "./spreadsheet/address";
-import { COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
+import { CELL_WIDTH, COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
 import { parseFormulaRefs } from "./spreadsheet/formulaRefs";
 import FormulaBar from "./spreadsheet/FormulaBar";
 import Grid from "./spreadsheet/Grid";
@@ -11,7 +11,7 @@ import Toolbar from "./spreadsheet/Toolbar";
 import type { CellAddress, CellFormat, CellRange, EditingState } from "./spreadsheet/types";
 import { useCellFormatting, type FormatSnapshot } from "./spreadsheet/useCellFormatting";
 import { useSpreadsheetEngine } from "./spreadsheet/useSpreadsheetEngine";
-import { clamp, columnLabel } from "./spreadsheet/utils";
+import { clamp } from "./spreadsheet/utils";
 import { defaultDecimals, formatNumberValue, formatPlainNumber, MAX_DECIMALS, type NumberFormat } from "./spreadsheet/numberFormat";
 import { summarize } from "./spreadsheet/summary";
 import { clampWidth, useColumnWidths } from "./spreadsheet/useColumnWidths";
@@ -346,10 +346,16 @@ export default function SpreadsheetTab() {
     const context = document.createElement("canvas").getContext("2d");
     if (!context) return;
     context.font = `${style.fontSize} ${style.fontFamily}`;
-    let widest = context.measureText(columnLabel(col)).width;
+    let widest = 0;
     for (let row = 0; row < rows; row++) {
       const text = displayValues[addressKey({ row, col })];
       if (text) widest = Math.max(widest, context.measureText(text).width);
+    }
+    // An empty column has nothing to fit to: reset it to the default width
+    // (like Excel) rather than collapsing it to the minimum.
+    if (widest === 0) {
+      columnWidths.setWidth(col, CELL_WIDTH);
+      return;
     }
     // 8px horizontal padding + 1px border + a little room for the fill handle.
     columnWidths.setWidth(col, clampWidth(widest + 20));
