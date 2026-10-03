@@ -13,12 +13,10 @@ spreadsheet behavior only.
 ## Grid sizing
 
 - **Revised again for the public release:** the cap grew from 25 x 7 to
-  50 rows x 26 columns, and the toolbar gained **Import CSV / Export CSV**
-  (export writes computed values; import replaces the sheet, is capped at
-  2 MB, and drops cells outside the grid with a warning; export prefixes
-  text starting with `= + - @` with an apostrophe to prevent CSV formula
-  injection). Cells outside the grid are also ignored when loading saved
-  documents. Auto-growing rows/columns remains a possible future change.
+  50 rows x 26 columns (A–Z). Cells outside the grid are ignored when
+  loading saved documents. CSV import/export was built and then removed:
+  the app is for quick numbers and screenshots, not data interchange.
+  Auto-growing rows/columns remains a possible future change.
 - **Revised post-v1** (see CLAUDE.md/PROMPTS.md Phase 24): the grid always
   renders its full fixed size — **50 rows x 26 columns (A–Z)** — regardless of
   window size. The original v1 behavior (below) clamped the rendered

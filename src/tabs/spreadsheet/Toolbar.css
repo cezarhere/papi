@@ -63,28 +63,3 @@
 .toolbar-swatch-active {
   border-color: var(--text-accent);
 }
-
-.toolbar-spacer {
-  flex: 1;
-}
-
-.toolbar-text-button {
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.toolbar-text-button:hover {
-  background: var(--border);
-  color: var(--text-primary);
-}
-
-.toolbar-text-button:focus-visible {
-  outline: 2px solid var(--text-accent);
-  outline-offset: -2px;
-}

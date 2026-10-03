@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { addressKey, formatRangeReference, parseAddressKey } from "./spreadsheet/address";
-import { parseCsv, toCsv } from "./spreadsheet/csv";
+import { addressKey, formatRangeReference } from "./spreadsheet/address";
 import { COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
 import FormulaBar from "./spreadsheet/FormulaBar";
 import Grid from "./spreadsheet/Grid";
@@ -48,7 +47,6 @@ function isFormula(value: string): boolean {
 }
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
-const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 
 export default function SpreadsheetTab() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -529,64 +527,6 @@ export default function SpreadsheetTab() {
   const formulaBarValue = editing ? editing.value : engine.getRawInput(activeCell);
   const activeFormat: CellFormat = formatting.getFormat(activeCell);
 
-  // CSV export writes computed *values* (what the grid shows, not formulas)
-  // for the used area only. The download goes through the browser's normal
-  // download path; Electron shows its native Save dialog for it.
-  function handleExportCsv() {
-    let maxRow = -1;
-    let maxCol = -1;
-    for (const key of Object.keys(engine.exportCells())) {
-      const address = parseAddressKey(key);
-      if (!address) continue;
-      maxRow = Math.max(maxRow, address.row);
-      maxCol = Math.max(maxCol, address.col);
-    }
-    const grid: string[][] = [];
-    for (let r = 0; r <= maxRow; r++) {
-      const line: string[] = [];
-      for (let c = 0; c <= maxCol; c++) line.push(engine.getDisplayValue({ row: r, col: c }));
-      grid.push(line);
-    }
-    const url = URL.createObjectURL(new Blob([toCsv(grid)], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "PAPI sheet.csv";
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  // Replaces the whole sheet. Cells are imported as typed text, so a value
-  // starting with "=" becomes a live formula — same as typing it. Anything
-  // outside the grid is dropped (and reported), and the file size is capped
-  // so a huge file can't hang the UI.
-  async function handleImportCsv(file: File) {
-    if (file.size > MAX_IMPORT_BYTES) {
-      window.alert("That file is too large to import (limit 2 MB).");
-      return;
-    }
-    const hasData = Object.keys(engine.exportCells()).length > 0;
-    if (hasData && !window.confirm("Importing replaces everything currently in the sheet. Continue?")) return;
-
-    const parsed = parseCsv(await file.text());
-    const cells: Record<string, string> = {};
-    let dropped = false;
-    parsed.forEach((line, r) => {
-      line.forEach((value, c) => {
-        if (value === "") return;
-        if (r >= rows || c >= cols) {
-          dropped = true;
-          return;
-        }
-        cells[addressKey({ row: r, col: c })] = value;
-      });
-    });
-    engine.importCells(cells);
-    formatting.replaceAll({});
-    setHistoryState({ entries: [], index: 0 });
-    setSelection({ anchor: { row: 0, col: 0 }, focus: { row: 0, col: 0 } });
-    if (dropped) window.alert(`Some cells were outside the ${rows}-row × ${cols}-column grid and were not imported.`);
-  }
-
   return (
     <div className="spreadsheet-tab">
       <Toolbar
@@ -594,8 +534,6 @@ export default function SpreadsheetTab() {
         onToggleBold={() => applyToggle("bold")}
         onToggleItalic={() => applyToggle("italic")}
         onSetFill={handleSetFill}
-        onExportCsv={handleExportCsv}
-        onImportCsv={(file) => void handleImportCsv(file)}
       />
       <FormulaBar
         addressLabel={activeCellKey}

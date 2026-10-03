@@ -1,4 +1,3 @@
-import { useRef, type ChangeEvent } from "react";
 import type { CellFormat } from "./types";
 import "./Toolbar.css";
 
@@ -14,8 +13,6 @@ interface ToolbarProps {
   onToggleBold: () => void;
   onToggleItalic: () => void;
   onSetFill: (color: string) => void;
-  onExportCsv: () => void;
-  onImportCsv: (file: File) => void;
 }
 
 export default function Toolbar({
@@ -23,18 +20,7 @@ export default function Toolbar({
   onToggleBold,
   onToggleItalic,
   onSetFill,
-  onExportCsv,
-  onImportCsv,
 }: ToolbarProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  function handleFileChosen(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    // Reset so choosing the same file twice in a row still fires onChange.
-    e.target.value = "";
-    if (file) onImportCsv(file);
-  }
-
   return (
     <div className="toolbar">
       <button
@@ -73,14 +59,6 @@ export default function Toolbar({
           title={`${label} fill`}
         />
       ))}
-      <div className="toolbar-spacer" />
-      <button type="button" className="toolbar-text-button" onClick={() => fileInputRef.current?.click()} title="Replace the sheet with a CSV file">
-        Import CSV
-      </button>
-      <button type="button" className="toolbar-text-button" onClick={onExportCsv} title="Save the sheet's values as a CSV file">
-        Export CSV
-      </button>
-      <input ref={fileInputRef} type="file" accept=".csv,text/csv" hidden onChange={handleFileChosen} />
     </div>
   );
 }
