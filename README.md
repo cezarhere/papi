@@ -43,8 +43,8 @@ A small macOS menu-bar app with two tabs, always one shortcut away
   `#NAME?`, `#REF!`, `#VALUE!`) instead of crashing. The full list is in
   HyperFormula's [function reference](https://hyperformula.handsontable.com/guide/built-in-functions.html).
 - **App** — lives in the menu bar, toggles with a global shortcut (default
-  ⌥', changeable in Settings), optional launch at login, remembers your last
-  tab, and opens on whichever Space you're on.
+  ⌥', changeable in Settings), optional launch at login, automatic updates
+  (opt-out), remembers your last tab, and opens on whichever Space you're on.
 
 Everything is saved automatically on your Mac.
 
@@ -66,10 +66,16 @@ are signed and notarized by Apple, so they open without security warnings.
 ## Privacy
 
 PAPI has no accounts, analytics or telemetry. Your data stays in
-`~/Library/Application Support/PAPI`. The only network request is a
-once-a-day fetch of currency exchange rates from
-[frankfurter.dev](https://frankfurter.dev) (no personal data sent);
-offline, it falls back to bundled rates.
+`~/Library/Application Support/PAPI`. It makes two kinds of network request:
+
+- Once a day, it fetches currency exchange rates from
+  [frankfurter.dev](https://frankfurter.dev) (no personal data sent);
+  offline, it falls back to bundled rates.
+- A few times a day, it asks this project's GitHub releases whether a newer
+  version exists, and downloads it in the background if so (you're asked
+  before restarting). Turn this off in **Settings → Check for updates
+  automatically**; **Check for Updates…** in the menu-bar menu still works
+  on demand.
 
 ## Build from source
 

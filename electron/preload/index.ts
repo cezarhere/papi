@@ -42,4 +42,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("window:hiding", listener);
     return () => ipcRenderer.removeListener("window:hiding", listener);
   },
+  // Settings popover's "check for updates automatically" toggle.
+  getAutoUpdate(): Promise<boolean> {
+    return ipcRenderer.invoke("updates:get");
+  },
+  setAutoUpdate(value: boolean): Promise<void> {
+    return ipcRenderer.invoke("updates:set", value);
+  },
 });

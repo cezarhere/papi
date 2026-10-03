@@ -21,7 +21,7 @@
   "build": {
     "appId": "com.cezarmatreniuc.papi",
     "productName": "PAPI",
-    "copyright": "Copyright \u00a9 2026 Cezar Matreniuc",
+    "copyright": "Copyright © 2026 Cezar Matreniuc",
     "files": [
       "out/**/*"
     ],
@@ -100,5 +100,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cezarhere/papi.git"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

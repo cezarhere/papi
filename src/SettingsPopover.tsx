@@ -63,6 +63,7 @@ export default function SettingsPopover() {
   // dev workflow, which has no window.electronAPI at all) — these rows
   // just don't render until there's a real Electron-backed value to show.
   const [launchAtLogin, setLaunchAtLoginState] = useState<boolean | null>(null);
+  const [autoUpdate, setAutoUpdateState] = useState<boolean | null>(null);
   const [shortcut, setShortcutState] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [shortcutError, setShortcutError] = useState<string | null>(null);
@@ -70,7 +71,13 @@ export default function SettingsPopover() {
   useEffect(() => {
     window.electronAPI?.getLaunchAtLogin().then(setLaunchAtLoginState);
     window.electronAPI?.getShortcut().then(setShortcutState);
+    window.electronAPI?.getAutoUpdate().then(setAutoUpdateState);
   }, []);
+
+  function handleAutoUpdateChange(checked: boolean) {
+    setAutoUpdateState(checked);
+    void window.electronAPI?.setAutoUpdate(checked);
+  }
 
   function handleLaunchAtLoginChange(checked: boolean) {
     setLaunchAtLoginState(checked);
@@ -180,6 +187,16 @@ export default function SettingsPopover() {
                 type="checkbox"
                 checked={launchAtLogin}
                 onChange={(e) => handleLaunchAtLoginChange(e.target.checked)}
+              />
+            </label>
+          )}
+          {autoUpdate !== null && (
+            <label className="settings-row">
+              <span>Check for updates automatically</span>
+              <input
+                type="checkbox"
+                checked={autoUpdate}
+                onChange={(e) => handleAutoUpdateChange(e.target.checked)}
               />
             </label>
           )}

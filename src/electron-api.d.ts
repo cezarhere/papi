@@ -8,6 +8,8 @@ interface Window {
     setLaunchAtLogin(value: boolean): Promise<void>;
     getShortcut(): Promise<string>;
     setShortcut(accelerator: string): Promise<boolean>;
+    getAutoUpdate(): Promise<boolean>;
+    setAutoUpdate(value: boolean): Promise<void>;
     onWindowShown(callback: () => void): () => void;
     onWindowHiding(callback: () => void): () => void;
   };
