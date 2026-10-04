@@ -1,0 +1,44 @@
+.update-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--selection-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.update-banner-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-banner-button {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.update-banner-button:hover {
+  background: var(--border);
+}
+
+.update-banner-primary {
+  border-color: var(--text-accent);
+  color: var(--text-accent);
+}
+
+.update-banner-button:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: 1px;
+}

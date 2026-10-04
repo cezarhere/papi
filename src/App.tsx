@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { DEFAULT_PRECISION, PrecisionContext } from "./PrecisionContext";
 import SettingsPopover from "./SettingsPopover";
+import UpdateBanner from "./UpdateBanner";
 import CalculatorTab from "./tabs/CalculatorTab";
 import { initCurrencyRates } from "./tabs/calculator/currencyRates";
 // Loaded on first visit to the tab: HyperFormula is the largest single
@@ -98,6 +99,7 @@ export default function App() {
               <SettingsPopover />
             </div>
           </div>
+          <UpdateBanner />
           <div className="tab-content">
             {activeTab === "calculator" ? (
               <CalculatorTab />

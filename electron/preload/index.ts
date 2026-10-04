@@ -49,4 +49,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setAutoUpdate(value: boolean): Promise<void> {
     return ipcRenderer.invoke("updates:set", value);
   },
+  // In-app update banner: state pushes from the main process, plus the
+  // buttons' actions. Returns an unsubscribe function.
+  onUpdateState(callback: (state: unknown) => void): () => void {
+    const listener = (_event: unknown, state: unknown) => callback(state);
+    ipcRenderer.on("update:state", listener);
+    return () => ipcRenderer.removeListener("update:state", listener);
+  },
+  downloadUpdate(): void {
+    ipcRenderer.send("updates:download");
+  },
+  installUpdate(): void {
+    ipcRenderer.send("updates:install");
+  },
 });

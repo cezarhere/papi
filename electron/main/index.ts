@@ -3,7 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { release } from "node:os";
-import { checkForUpdatesNow, getAutoCheckEnabled, setAutoCheckEnabled, startUpdateChecks } from "./updates";
+import {
+  checkForUpdatesNow,
+  downloadUpdateNow,
+  getAutoCheckEnabled,
+  installUpdateNow,
+  setAutoCheckEnabled,
+  startUpdateChecks,
+} from "./updates";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -196,6 +203,14 @@ if (!gotLock) {
     setAutoCheckEnabled(value);
   });
 
+  // Update banner buttons (src/UpdateBanner.tsx).
+  ipcMain.on("updates:download", (event) => {
+    if (isTrustedSender(event)) downloadUpdateNow();
+  });
+  ipcMain.on("updates:install", (event) => {
+    if (isTrustedSender(event)) installUpdateNow();
+  });
+
   ipcMain.handle("shortcut:get", (event) => (isTrustedSender(event) ? currentShortcut : ""));
   ipcMain.handle("shortcut:set", (event, accelerator: unknown) => {
     if (!isTrustedSender(event)) return false;
@@ -240,7 +255,7 @@ if (!gotLock) {
 
     createWindow();
     createTray();
-    startUpdateChecks();
+    startUpdateChecks(presentMainWindow, () => mainWindow);
     // applyShortcut's own failure path already re-registers whatever was
     // previously bound (DEFAULT_SHORTCUT, at this point in startup) —
     // it does *not* persist that fallback, so a saved custom shortcut
@@ -380,6 +395,14 @@ function showOnCurrentSpace(window: BrowserWindow): void {
 function hideWindow(): void {
   mainWindow?.webContents.send("window:hiding");
   mainWindow?.hide();
+}
+
+// For update dialogs: bring the window forward on the current Space and hand
+// it back, so the dialog can be attached to it (see updates.ts).
+function presentMainWindow(): BrowserWindow | null {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  showOnCurrentSpace(mainWindow);
+  return mainWindow;
 }
 
 function showWindow(): void {

@@ -10,6 +10,9 @@ interface Window {
     setShortcut(accelerator: string): Promise<boolean>;
     getAutoUpdate(): Promise<boolean>;
     setAutoUpdate(value: boolean): Promise<void>;
+    onUpdateState(callback: (state: unknown) => void): () => void;
+    downloadUpdate(): void;
+    installUpdate(): void;
     onWindowShown(callback: () => void): () => void;
     onWindowHiding(callback: () => void): () => void;
   };
