@@ -83,12 +83,20 @@ for size in (16, 32, 128, 256, 512):
 subprocess.run(["iconutil", "-c", "icns", iconset, "-o", "build/icon.icns"], check=True)
 shutil.rmtree(iconset)
 
-# --- tray glyph (template image: black on transparent, 44x44) --------
+# --- tray glyph (template image: black on transparent, 44x44 = 22pt @2x) --
+# A compact filled rounded box with the percent sign knocked out of it, to
+# match the other filled-box icons in the macOS menu bar (rather than a big
+# bare glyph). Template images ignore color; macOS tints the opaque part and
+# the knocked-out % shows the menu bar through it.
 T = 44 * 16
+BOX = 34 * 16                      # 17pt box inside the 22pt canvas
 tray = Image.new("RGBA", (T, T), (0, 0, 0, 0))
-tm = Image.new("L", (T, T), 0)
-percent(ImageDraw.Draw(tm), 255, T / 2, T / 2, T * 0.80, 0)
-black = Image.new("RGBA", (T, T), (0, 0, 0, 255))
-tray.paste(black, (0, 0), tm)
+d = ImageDraw.Draw(tray)
+x0 = (T - BOX) / 2
+d.rounded_rectangle((x0, x0, x0 + BOX, x0 + BOX), radius=BOX * 0.24, fill=(0, 0, 0, 255))
+cut = Image.new("L", (T, T), 0)
+percent(ImageDraw.Draw(cut), 255, T / 2, T / 2, BOX * 0.62, 0)
+clear = Image.new("RGBA", (T, T), (0, 0, 0, 0))
+tray.paste(clear, (0, 0), cut)     # erase the glyph shape from the box
 tray.resize((44, 44), Image.LANCZOS).save("build/tray.png")
 print("ok")
