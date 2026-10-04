@@ -52,9 +52,10 @@ export interface SpreadsheetEngine {
   // relative references (and leaving $-absolute ones fixed).
   pasteAt(address: CellAddress): void;
   clearClipboard(): void;
-  // Repeats `source`'s content down through `target`, adjusting relative
+  // Repeats `source`'s content through `target` (any direction — down, up,
+  // right or left; HyperFormula picks it from where `target` sits), adjusting relative
   // references per destination row — the fill-handle drag operation.
-  fillDown(source: CellRange, target: CellRange): void;
+  fillRange(source: CellRange, target: CellRange): void;
   // Clears every cell in `range` as a single undo-able transaction.
   clearRange(range: CellRange): void;
   // Undoes/redoes the last content/formula change. Returns the address of
@@ -148,7 +149,7 @@ export function useSpreadsheetEngine(): SpreadsheetEngine {
     engine.clearClipboard();
   }, [engine]);
 
-  const fillDown = useCallback(
+  const fillRange = useCallback(
     (source: CellRange, target: CellRange) => {
       const sourceSimpleRange = toSimpleCellRange(sheetId, normalizeRange(source));
       const targetSimpleRange = toSimpleCellRange(sheetId, normalizeRange(target));
@@ -250,7 +251,7 @@ export function useSpreadsheetEngine(): SpreadsheetEngine {
     canUndo,
     canRedo,
     clearClipboard,
-    fillDown,
+    fillRange,
     clearRange,
     exportCells,
     importCells,

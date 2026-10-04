@@ -115,10 +115,12 @@
 
 .fill-handle {
   position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 6px;
-  height: 6px;
+  /* Fully inside the cell: cells are overflow:hidden, so a handle straddling
+     the corner was clipped to a ~3px sliver that was nearly impossible to grab. */
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
   background: var(--text-accent);
   border: 1px solid var(--bg-primary);
   cursor: crosshair;

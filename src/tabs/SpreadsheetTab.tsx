@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { addressKey, formatRangeReference } from "./spreadsheet/address";
 import { CELL_WIDTH, COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
+import { computeFillTarget, unionBounds } from "./spreadsheet/fill";
 import { parseFormulaRefs } from "./spreadsheet/formulaRefs";
 import FormulaBar from "./spreadsheet/FormulaBar";
 import Grid from "./spreadsheet/Grid";
@@ -66,8 +67,9 @@ export default function SpreadsheetTab() {
   });
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
-  // Row the fill preview currently extends to, while dragging the fill handle.
-  const [fillPreviewEndRow, setFillPreviewEndRow] = useState<number | null>(null);
+  // Cells a fill-handle drag would write to right now (any direction, see
+  // fill.ts), or null while the cursor is still inside the selection.
+  const [fillTarget, setFillTarget] = useState<RangeBounds | null>(null);
   // Range with the dashed "copied" outline. Purely visual — HyperFormula
   // owns the actual clipboard contents.
   const [copiedRange, setCopiedRange] = useState<CellRange | null>(null);
@@ -190,20 +192,20 @@ export default function SpreadsheetTab() {
     if (!dragMode) return;
 
     function handleMouseUp() {
-      if (dragMode === "fill" && fillPreviewEndRow !== null) {
-        commitFill(fillPreviewEndRow);
+      if (dragMode === "fill" && fillTarget !== null) {
+        commitFill(fillTarget);
       }
       if (dragMode === "formula-ref") {
         setFormulaRefDrag(null);
       }
       setDragMode(null);
-      setFillPreviewEndRow(null);
+      setFillTarget(null);
     }
 
     window.addEventListener("mouseup", handleMouseUp);
     return () => window.removeEventListener("mouseup", handleMouseUp);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragMode, fillPreviewEndRow, selection]);
+  }, [dragMode, fillTarget, selection]);
 
   // Records one undo-able action. Called right after every content mutation
   // (as a bare "content" marker — HyperFormula owns the actual before/after)
@@ -276,21 +278,21 @@ export default function SpreadsheetTab() {
     }
   }
 
-  function commitFill(endRow: number) {
-    if (endRow <= selectionBounds.maxRow) return;
+  function commitFill(targetBounds: RangeBounds) {
     const source: CellRange = {
       anchor: { row: selectionBounds.minRow, col: selectionBounds.minCol },
       focus: { row: selectionBounds.maxRow, col: selectionBounds.maxCol },
     };
     const target: CellRange = {
-      anchor: { row: selectionBounds.maxRow + 1, col: selectionBounds.minCol },
-      focus: { row: endRow, col: selectionBounds.maxCol },
+      anchor: { row: targetBounds.minRow, col: targetBounds.minCol },
+      focus: { row: targetBounds.maxRow, col: targetBounds.maxCol },
     };
-    engine.fillDown(source, target);
+    engine.fillRange(source, target);
     pushHistory({ type: "content" });
+    const filled = unionBounds(selectionBounds, targetBounds);
     setSelection({
-      anchor: { row: selectionBounds.minRow, col: selectionBounds.minCol },
-      focus: { row: endRow, col: selectionBounds.maxCol },
+      anchor: { row: filled.minRow, col: filled.minCol },
+      focus: { row: filled.maxRow, col: filled.maxCol },
     });
   }
 
@@ -397,7 +399,7 @@ export default function SpreadsheetTab() {
     if (dragMode === "select") {
       setSelection((prev) => ({ ...prev, focus: address }));
     } else if (dragMode === "fill") {
-      setFillPreviewEndRow(clamp(address.row, selectionBounds.maxRow, rows - 1));
+      setFillTarget(computeFillTarget(selectionBounds, address, rows, cols));
     } else if (dragMode === "formula-ref" && formulaRefDrag && editing) {
       const refText = formatRangeReference({ anchor: formulaRefDrag.anchor, focus: address });
       const newValue =
@@ -415,7 +417,7 @@ export default function SpreadsheetTab() {
     e.stopPropagation();
     e.preventDefault();
     setDragMode("fill");
-    setFillPreviewEndRow(selectionBounds.maxRow);
+    setFillTarget(null);
   }
 
   function handleDoubleClick(address: CellAddress) {
@@ -594,15 +596,7 @@ export default function SpreadsheetTab() {
   }
   const summary = summarize(selectedNumbers);
 
-  const fillPreviewBounds: RangeBounds | null =
-    dragMode === "fill" && fillPreviewEndRow !== null && fillPreviewEndRow > selectionBounds.maxRow
-      ? {
-          minRow: selectionBounds.maxRow + 1,
-          maxRow: fillPreviewEndRow,
-          minCol: selectionBounds.minCol,
-          maxCol: selectionBounds.maxCol,
-        }
-      : null;
+  const fillPreviewBounds: RangeBounds | null = dragMode === "fill" ? fillTarget : null;
   const copiedBounds = copiedRange ? normalizeRange(copiedRange) : null;
   // Outlined for as long as a formula is being edited — including after the
   // drag that picked a reference ends — not just while dragging.

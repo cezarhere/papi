@@ -1,7 +1,7 @@
 # PAPI
 
 <p align="center">
-  <img src="docs/screenshots/calculator-trip.png" alt="PAPI calculator: currency, durations, dates and unit conversions" width="440">
+  <img src="docs/screenshots/calculator-budget.png" alt="PAPI calculator: a monthly budget with labels, sums and percentages" width="440">
   <img src="docs/screenshots/spreadsheet-summary.png" alt="PAPI spreadsheet with a selection summary bar" width="440">
 </p>
 
@@ -58,6 +58,7 @@ Everything is saved automatically on your Mac.
 Type plain language on the left, see the answer on the right:
 
 <p align="center">
+  <img src="docs/screenshots/calculator-trip.png" alt="Currency, durations, dates and unit conversions" width="300">
   <img src="docs/screenshots/calculator-bill.png" alt="Splitting a bill with a tip" width="300">
   <img src="docs/screenshots/calculator-sale.png" alt="Percentages: discount, saving, add VAT" width="300">
 </p>

@@ -58,6 +58,22 @@ function buildScope(env: Environment): Record<string, number> {
   return scope;
 }
 
+// Variable names are case-insensitive ("Rent: 1450" then "rent + 50"). The
+// scope keeps the spelling a name was first defined with, and identifiers in
+// an expression that match one of those names in a different case are
+// rewritten to it. Everything else (functions, units, constants like PI)
+// stays case-sensitive, as mathjs expects.
+function evaluateWithNames(expression: string, env: Environment): unknown {
+  const scope = buildScope(env);
+  const canonical = new Map<string, string>();
+  for (const name of env.names.keys()) canonical.set(name.toLowerCase(), name);
+  const rewritten = expression.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (identifier) => {
+    if (identifier in scope) return identifier;
+    return canonical.get(identifier.toLowerCase()) ?? identifier;
+  });
+  return evaluate(rewritten, scope);
+}
+
 function formatNumber(value: number, precision: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: precision });
 }
@@ -72,7 +88,7 @@ function formatCurrency(value: number): string {
 function evaluateArithmeticExpression(expression: string, env: Environment): LineEvaluation {
   let value: unknown;
   try {
-    value = evaluate(expression, buildScope(env));
+    value = evaluateWithNames(expression, env);
   } catch {
     return { result: null, kind: "text", numericValue: null };
   }
@@ -108,7 +124,7 @@ function evaluateArithmeticExpression(expression: string, env: Environment): Lin
 function evaluateAssignment(name: string, expression: string, env: Environment): LineEvaluation {
   let value: unknown;
   try {
-    value = evaluate(expression, buildScope(env));
+    value = evaluateWithNames(expression, env);
   } catch {
     return { result: null, kind: "text", numericValue: null };
   }
@@ -117,7 +133,10 @@ function evaluateAssignment(name: string, expression: string, env: Environment):
     return { result: "Error", kind: "error", numericValue: null };
   }
 
-  env.names.set(name, value);
+  // Reassigning in a different case ("rent: 1" after "Rent: 2") updates the
+  // existing name rather than creating a second one.
+  const existing = [...env.names.keys()].find((key) => key.toLowerCase() === name.toLowerCase());
+  env.names.set(existing ?? name, value);
   return { result: formatNumber(value, env.precision), kind: "variable", numericValue: value };
 }
 
@@ -238,7 +257,7 @@ function evaluateConversion(amount: string, from: string, to: string, precision:
 // hasn't been assigned yet on an earlier line the user is still editing.
 function resolveToken(token: string, env: Environment): number | null {
   try {
-    const value = evaluate(token, buildScope(env));
+    const value = evaluateWithNames(token, env);
     return typeof value === "number" ? value : null;
   } catch {
     return null;

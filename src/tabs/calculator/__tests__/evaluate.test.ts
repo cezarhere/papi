@@ -55,6 +55,12 @@ describe("variables, labels and prev", () => {
   it("supports Label: value", async () => {
     expect(await run(["rent: 200", "food: 300", "rent + food"])).toEqual(["200", "300", "500"]);
   });
+  it("names are case-insensitive", async () => {
+    expect(await run(["Rent: 1450", "rent + 50", "RENT + 50"])).toEqual(["1,450", "1,500", "1,500"]);
+  });
+  it("reassigning in another case updates the same name", async () => {
+    expect(await run(["Rent: 100", "rent = 200", "RENT + 1"])).toEqual(["100", "200", "201"]);
+  });
   it("prev is the last numeric result", async () => {
     expect(await run(["100", "prev * 2"])).toEqual(["100", "200"]);
   });

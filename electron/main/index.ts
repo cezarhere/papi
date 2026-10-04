@@ -66,20 +66,17 @@ const REPO_URL = "https://github.com/cezarhere/papi";
 // the user's browser. Nothing is sent from the app itself: the user reviews and
 // submits it on github.com, so no diagnostics leave the machine without
 // their say-so. Only our own https URL is ever passed to openExternal.
+// Opens the bug-report issue form with the version and system fields
+// prefilled (form fields are addressed by their `id` in bug_report.yml).
+// Blank issues are disabled in the repo, so a plain /issues/new?body= link
+// would be redirected to the template chooser and lose the text.
 function reportBug(): void {
-  const body = [
-    "**What happened?**",
-    "",
-    "**What did you expect to happen?**",
-    "",
-    "**How can we make it happen again?**",
-    "1. ",
-    "",
-    "---",
-    `PAPI ${app.getVersion()} · macOS (Darwin ${release()}) · ${process.arch}`,
-  ].join("\n");
-  const url = `${REPO_URL}/issues/new?labels=bug&body=${encodeURIComponent(body)}`;
-  void shell.openExternal(url);
+  const params = new URLSearchParams({
+    template: "bug_report.yml",
+    version: app.getVersion(),
+    macos: `Darwin ${release()}, ${process.arch === "arm64" ? "Apple Silicon" : process.arch}`,
+  });
+  void shell.openExternal(`${REPO_URL}/issues/new?${params.toString()}`);
 }
 
 const DEFAULT_SHORTCUT = "Option+'";
