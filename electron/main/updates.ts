@@ -52,6 +52,8 @@ let updater: Updater | null = null;
 // the only time "you're up to date" / error dialogs are shown. Background
 // checks stay silent unless an update is actually ready.
 let manualCheck = false;
+// Last version we already asked about during this session.
+let promptedVersion: string | null = null;
 
 function getUpdater(): Updater | null {
   // Unpackaged (dev) runs have no app-update.yml to read.
@@ -59,18 +61,37 @@ function getUpdater(): Updater | null {
   if (updater) return updater;
 
   const instance = createRequire(import.meta.url)("electron-updater").autoUpdater as Updater;
-  instance.autoDownload = true;
+  // Ask first: download only after the user says yes to the "available" dialog.
+  instance.autoDownload = false;
   instance.autoInstallOnAppQuit = true;
   instance.allowPrerelease = false;
 
   instance.on("update-available", (info) => {
-    if (manualCheck) {
-      void dialog.showMessageBox({
+    // Background checks ask once per version per session (not every 6 hours
+    // for the same release); a manual "Check for Updates…" always asks.
+    if (!manualCheck && info.version === promptedVersion) return;
+    promptedVersion = info.version;
+    manualCheck = false;
+    void dialog
+      .showMessageBox({
         type: "info",
         message: `PAPI ${info.version} is available`,
-        detail: "It's downloading in the background. You'll be asked to restart when it's ready.",
+        detail: `You have ${app.getVersion()}. Downloading takes about a minute, and you'll be asked before PAPI restarts.`,
+        buttons: ["Download update", "Not now"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response !== 0) return;
+        instance.downloadUpdate().catch((error: unknown) => {
+          console.error("Update download failed:", error);
+          void dialog.showMessageBox({
+            type: "warning",
+            message: "Couldn't download the update",
+            detail: "Check your internet connection and try again from Check for Updates….",
+          });
+        });
       });
-    }
   });
   instance.on("update-not-available", () => {
     if (manualCheck) {
