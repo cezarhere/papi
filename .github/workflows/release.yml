@@ -60,6 +60,14 @@ jobs:
       # (PAPI-arm64.dmg, PAPI-x64.dmg), so
       #   https://github.com/<owner>/<repo>/releases/latest/download/PAPI-arm64.dmg
       # always serves the newest published release. Published manually.
+      - name: Write release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            cat .github/release-header.md
+            gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body
+          } > release-notes.md
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,5 +77,5 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${FILES[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${FILES[@]}" --draft --title "PAPI ${GITHUB_REF_NAME#v}" --generate-notes
+            gh release create "$GITHUB_REF_NAME" "${FILES[@]}" --draft --title "PAPI ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
           fi

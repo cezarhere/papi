@@ -1,5 +1,10 @@
 # PAPI
 
+<p align="center">
+  <img src="docs/screenshots/calculator-trip.png" alt="PAPI calculator: currency, durations, dates and unit conversions" width="440">
+  <img src="docs/screenshots/spreadsheet-summary.png" alt="PAPI spreadsheet with a selection summary bar" width="440">
+</p>
+
 A small macOS menu-bar app with two tabs, always one shortcut away
 (default **⌥'**):
 
@@ -47,6 +52,22 @@ A small macOS menu-bar app with two tabs, always one shortcut away
   (opt-out), remembers your last tab, and opens on whichever Space you're on.
 
 Everything is saved automatically on your Mac.
+
+## What it looks like
+
+Type plain language on the left, see the answer on the right:
+
+<p align="center">
+  <img src="docs/screenshots/calculator-bill.png" alt="Splitting a bill with a tip" width="300">
+  <img src="docs/screenshots/calculator-sale.png" alt="Percentages: discount, saving, add VAT" width="300">
+</p>
+
+The spreadsheet shows Sum, Average, Count, Min and Max for whatever you
+select, and outlines the cells a formula refers to while you type it:
+
+<p align="center">
+  <img src="docs/screenshots/spreadsheet-formulas.png" alt="Spreadsheet formula with the referenced cells outlined" width="440">
+</p>
 
 ## Install
 
