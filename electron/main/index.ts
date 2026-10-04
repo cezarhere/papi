@@ -208,7 +208,11 @@ if (!gotLock) {
     if (isTrustedSender(event)) downloadUpdateNow();
   });
   ipcMain.on("updates:install", (event) => {
-    if (isTrustedSender(event)) installUpdateNow();
+    if (!isTrustedSender(event)) return;
+    installUpdateNow(() => {
+      mainWindow?.webContents.send("window:hiding"); // flush pending autosaves
+      isQuitting = true; // let the window actually close instead of hiding
+    });
   });
 
   ipcMain.handle("shortcut:get", (event) => (isTrustedSender(event) ? currentShortcut : ""));

@@ -173,6 +173,14 @@ export function downloadUpdateNow(): void {
   });
 }
 
-export function installUpdateNow(): void {
-  getUpdater()?.quitAndInstall();
+// quitAndInstall() closes every window *first* and only then quits. PAPI
+// turns a window close into "hide" unless it already knows it's quitting, so
+// without telling it up front (beforeInstall sets that flag) the close was
+// swallowed: the window vanished, the app never quit, and the installer
+// waited forever. Found when "Restart now" did nothing on two Macs.
+export function installUpdateNow(beforeInstall: () => void): void {
+  const instance = getUpdater();
+  if (!instance) return;
+  beforeInstall();
+  instance.quitAndInstall();
 }
