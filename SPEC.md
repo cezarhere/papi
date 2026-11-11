@@ -50,6 +50,46 @@ spreadsheet behavior only.
 - Arrow keys move selection; Tab/Enter confirm and move right/down;
   Escape cancels an in-progress edit.
 
+### Excel parity (v0.1.5)
+
+Where a behaviour isn't spelled out here, the rule is "do what Excel
+does". Settled choices, so they aren't re-litigated:
+
+- **Two edit modes.** Typing over a cell starts *enter* mode: arrow keys
+  commit and move (or, in a formula right after an operator, pick a cell).
+  Double-click, F2 or the formula bar start *edit* mode: arrows move the
+  caret. F2 toggles between them.
+- **Keys.** Shift+arrows extend; Cmd+arrows jump to the edge of a data
+  block; Tab/Shift+Tab and Enter/Shift+Enter move (Enter after Tabs
+  returns to the starting column); Home, Cmd+Home, Cmd+End, Page Up/Down;
+  Delete and Backspace clear; F4 cycles absolute/relative; Cmd+A selects
+  all. Enter/Tab inside a multi-cell selection collapse it rather than
+  cycling within it (Excel cycles; not worth the complexity here).
+- **Picking references.** A clicked cell is inserted after an operator,
+  bracket or comma; replaces the reference the caret is on; anywhere else
+  the click commits the edit (formulaEdit.ts `refInsertionSpan`).
+- **Autocomplete.** Tab accepts the highlighted function; Enter accepts
+  only after the list has been arrowed through, otherwise it commits.
+- **Typed values.** Dates (day/month order from the system locale),
+  percentages, `$ € £` amounts and times display as typed on a General
+  cell; an explicit number format always wins. A date serial below 10000
+  is shown as a plain number (it is almost always a difference of dates).
+  `1,234.5` is stored as `1234.5`. A missing `)` is added on commit.
+- **Overflow.** Text spills across empty neighbours; a number that doesn't
+  fit shows `####`.
+- **Clipboard.** Tab-separated text on the system clipboard. A paste whose
+  text still matches the range last copied here is an internal paste
+  (formulas adjusted, formats carried, a cut moves); anything else is
+  pasted as typed values. Any edit ends copy mode. Nothing is ever written
+  outside the grid.
+- **Fill.** Two or more evenly spaced plain numbers continue as a series;
+  everything else repeats. Formats are carried.
+- **Undo.** One history for content and formatting; each entry restores
+  the selection it was made with. Column widths are not undoable.
+- **Not built (possible later):** inserting/deleting rows and columns,
+  multiple selections (Cmd+click), coloured reference *text* in the
+  formula, fill-handle double-click.
+
 ## Formulas
 
 - Formulas start with `=`.
@@ -152,6 +192,5 @@ spreadsheet behavior only.
 ## Out of scope for v1 (revisit later if wanted)
 
 - Multiple sheets/tabs within the spreadsheet tab itself.
-- Number formatting (currency, percentages, decimals).
 - More functions beyond the v1 set.
 - Cross-tab references between Calculator and Spreadsheet tabs.

@@ -26,10 +26,14 @@ A small macOS menu-bar app with two tabs, always one shortcut away
   - Dates: `today`, `next friday`, `3 months ago`, `today + 14 days`.
   - Click a result to copy it. Drag the divider to resize the columns; long
     lines wrap. Precision (0–10 decimals) is a setting.
-- **Spreadsheet** — a 50-row × 26-column (A–Z) grid with live formulas,
-  cell references (`A1`, `$A$1`) and ranges (`A1:B10`), a formula bar,
-  copy/paste that adjusts relative references, fill-down, undo/redo, and
-  bold/italic/fill colors. Powered by [HyperFormula](https://hyperformula.handsontable.com/),
+- **Spreadsheet** — a 50-row × 26-column (A–Z) grid that works the way
+  Excel does: live formulas with cell references (`A1`, `$A$1`) and ranges
+  (`A1:B10`), function autocomplete, click or arrow to pick cells into a
+  formula, Excel's keyboard navigation (Tab/Enter, Shift- and ⌘-arrows,
+  F2, F4), copy/cut/paste to and from other apps, a fill handle that
+  continues number series, undo/redo, number formats and
+  bold/italic/fill colors. Dates, percentages, currency and times are
+  recognised as you type them. Powered by [HyperFormula](https://hyperformula.handsontable.com/),
   which provides about 400 Excel-compatible functions, including:
   - **Math:** `SUM`, `SUMIF`, `SUMIFS`, `SUMPRODUCT`, `PRODUCT`, `ROUND`,
     `ROUNDUP`, `ROUNDDOWN`, `ABS`, `MOD`, `POWER`, `SQRT`, `CEILING`, `FLOOR`
@@ -41,15 +45,16 @@ A small macOS menu-bar app with two tabs, always one shortcut away
   - **Finance:** `PMT`, `FV`, `PV`, `NPV`, `IRR`, `RATE`
   - **Text:** `CONCATENATE`, `LEFT`, `RIGHT`, `MID`, `LEN`, `UPPER`, `LOWER`,
     `TRIM`, `TEXT`
-  - **Date:** `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, `DAY` (dates show as
-    serial numbers; there is no date formatting yet)
+  - **Date:** `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, `DAY`
 
   Circular references and bad formulas show standard errors (`#DIV/0!`,
   `#NAME?`, `#REF!`, `#VALUE!`) instead of crashing. The full list is in
   HyperFormula's [function reference](https://hyperformula.handsontable.com/guide/built-in-functions.html).
 - **App** — lives in the menu bar, toggles with a global shortcut (default
   ⌥', changeable in Settings), optional launch at login, automatic updates
-  (opt-out), remembers your last tab, and opens on whichever Space you're on.
+  (opt-out), follows the system's light/dark appearance and accent colour,
+  remembers your last tab and window position, and opens on whichever Space
+  you're on.
 
 Everything is saved automatically on your Mac.
 

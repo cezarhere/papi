@@ -1,49 +1,48 @@
-# Design tokens — dark theme
+# Design
 
-## Why this exists
+## Direction
 
-Both tabs need to look like one app, and the calculator tab is being
-built next. Defining the palette as tokens once, and retrofitting the
-spreadsheet tab to use them in Phase 8, means the calculator tab in
-Phases 9-14 is built against the real palette from the start instead of
-getting themed twice.
+PAPI should feel like something that ships with macOS: system font, system
+accent colour, light and dark appearance, translucent chrome, hairline
+separators, native menus. The one deliberate exception is the calculator
+tab's lines, which keep a monospace face (the Numi-style notepad reads
+best with fixed-width digits).
 
-This defines a single dark theme (matching the Numi reference screenshot)
-— not a light/dark toggle. If a light mode is ever wanted, it's a second
-value set behind a `data-theme` attribute; out of scope for now.
+This replaced the original single dark theme in v0.1.5.
 
 ## Tokens
 
-Approximate starting values, picked to match the reference screenshot's
-feel — treat as a first pass, adjust freely once it's rendering:
+Defined once in `src/theme.css`, in two value sets chosen by
+`prefers-color-scheme` (Electron follows the system appearance):
 
-```css
-:root {
-  --bg-primary: #1e1e1e;      /* app background */
-  --bg-elevated: #262626;     /* toolbar, formula bar, panels */
-  --border: #3a3a3a;
+| Token | Use |
+| --- | --- |
+| `--accent` | Selection, focus, active controls. In the app it is replaced at runtime with the accent colour from System Settings (`useSystemAppearance.ts`); the stylesheet value is the fallback for the plain-browser dev workflow. |
+| `--bg-content` | The working surface: grid, calculator lines. Opaque. |
+| `--bg-chrome` | Title bar, toolbar, status bar. Translucent in the app, over the window's vibrancy material; opaque in a browser and with Reduce Transparency. |
+| `--bg-header` | Grid row/column headers. |
+| `--bg-raised` | Popovers, the selected segment. |
+| `--separator`, `--grid-line` | Hairlines between chrome areas; grid lines. |
+| `--text-primary/secondary/tertiary` | Text, in decreasing emphasis. |
+| `--text-result`, `--text-error` | Computed values; errors. |
+| `--control-fill/hover/active` | Resting, hovered and pressed fills of controls. |
+| `--accent-tint`, `--accent-soft`, `--focus-ring` | Derived from the accent: selection tint, pressed/on state, focus halo. |
+| `--font-ui`, `--font-mono` | System font for everything; monospace for calculator lines. Numbers in the grid use the UI font with tabular figures. |
 
-  --text-primary: #ececea;    /* main numbers / input text */
-  --text-secondary: #8a8a88;  /* muted chrome, placeholders */
-  --text-accent: #5b9bd5;     /* keywords / variables, e.g. "sum" */
-  --text-result: #a8d24c;     /* computed values, Numi's green */
-  --text-error: #e0645a;      /* parse errors, circular refs */
+Older names (`--bg-primary`, `--bg-elevated`, `--border`, `--text-accent`,
+`--selection-bg`) remain as aliases.
 
-  --selection-bg: #2f4a63;    /* selected cell / active line */
+## Conventions
 
-  --font-mono:
-    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-}
-```
-
-The monospace stack is a deliberate choice, not a default — a
-number-heavy UI like this reads more evenly with tabular figures than
-with a proportional font.
-
-## Where these apply
-
-- Spreadsheet tab: grid background, cell borders, selection highlight,
-  toolbar background, formula bar
-- Calculator tab (once built): line background, result coloring by kind
-  (plain arithmetic vs. unit conversion vs. currency vs. `sum` — see
-  CALC_SPEC.md's "Styling" section for which token maps to which)
+- Controls are 22–24px tall with a 5px radius; popovers 8–10px. No
+  outlined buttons: a control is a soft fill or nothing until hovered.
+- Separators are 0.5px (one device pixel on Retina).
+- Buttons use the default arrow cursor, never a pointing hand.
+- Focus is a 3px soft accent ring on controls; content text fields show
+  only a caret.
+- Booleans in Settings are switches.
+- Motion is short (≤150ms) and switched off under Reduce Motion.
+- Scrollbars are the system's own (overlay or always-on, per System
+  Settings) — not hidden, not restyled.
+- Fill colours are light pastels in both appearances; text on a filled
+  cell is always dark.

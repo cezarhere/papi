@@ -134,10 +134,60 @@ C1: =A1+B1
 =IF(A1>5, "big", "small")
 ```
 
+### Typed values
+```
+1/2/2026      -> shown as a date (day/month order follows the system locale)
+50%           -> 50%
+$12.50  €5    -> currency
+12:30         -> time
+1,234.5       -> the number 1234.5
+=TODAY()      -> a date, not a serial number
+=IF(TRUE,1,2) -> 1 (bare TRUE/FALSE work)
+=SUM(A1:A3    -> closing bracket added on Enter
+=1/0          -> red #DIV/0!, hover for the explanation
+123456789012345 in a narrow column -> ####
+long text next to empty cells      -> spills across them
+```
+
+### Navigation and selection
+- Arrows move; Shift+arrows extend; Cmd+arrows jump to the edge of a block
+  of data (Cmd+Shift extends)
+- Tab / Shift+Tab move right/left, Enter / Shift+Enter down/up; Enter after
+  a run of Tabs returns to the column the run started in
+- Home, Cmd+Home, Cmd+End, Page Up/Down
+- Shift+click extends; click a column/row header (drag or Shift+click for
+  several), the corner for everything; Cmd+A selects all
+- Dragging a selection past the edge scrolls the grid
+- Selected rows/columns are highlighted in the headers; the status bar
+  shows Sum/Average/Count/Min/Max for a multi-cell selection (click to copy)
+
 ### Editing
-- Double-click a cell, or type directly while it's selected, to edit
-- Type in the formula bar — should stay in sync with the cell live
-- Fill handle: select a cell/range, drag the bottom-right handle down
-- Copy/paste: `Cmd+C` / `Cmd+V`, relative references should adjust
-- Undo/redo: `Cmd+Z` / `Cmd+Shift+Z`
-- `Cmd+A` should select the grid's cells, not the whole page
+- Type over a cell (arrows then commit and move), or double-click / F2 to
+  edit in place (arrows move the caret); Escape cancels
+- Type in the formula bar — stays in sync with the cell live
+- Delete or Backspace clears the selection
+- Formulas: `=su` offers SUM… (Tab accepts, arrows choose); click or drag
+  cells to insert a reference at the caret (also from the formula bar);
+  clicking another cell right after a reference replaces it; right after
+  an operator the arrow keys pick a cell; F4 cycles `A1 → $A$1 → A$1 → $A1`
+- Each range a formula refers to is outlined in its own colour
+
+### Clipboard, fill, undo
+- Cmd+C / Cmd+X / Cmd+V: within the sheet formulas adjust and formatting
+  comes along; a cut moves the cells; one cell pasted over a selection
+  fills it; pasting near the edge never writes outside the grid
+- Copy a block and paste it into Numbers/Excel/a text editor, and back
+- Right-click a cell: Cut / Copy / Paste / Clear Contents (in the app)
+- Fill handle: drag in any direction; `1, 2` continues as `3, 4`; formats
+  are carried
+- Undo/redo: `Cmd+Z` / `Cmd+Shift+Z` — covers content and formatting in
+  the order they happened, and restores the selection
+- Switch to the Calculator tab and back: selection, scroll position and
+  undo history are still there
+
+### App
+- Appearance follows the system (light/dark, accent colour)
+- Cmd+1 / Cmd+2 switch tabs; Cmd+, opens Settings
+- Menu-bar icon: click toggles the window, right-click opens the menu
+- Window size and position are remembered
+- Settings → shortcut: Option- and Shift- combinations can be recorded

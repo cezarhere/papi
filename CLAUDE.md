@@ -12,8 +12,10 @@ calculator (v1 complete, Phases 8-14; v2 — Numi feature-parity work
 identified via gap analysis, Phases 15-23 — complete). The React app
 (both tabs) is done; Phase 24 wrapped it in an Electron shell so it
 runs as a background/tray app rather than only in a browser tab.
-Spreadsheet requirements: `SPEC.md`. Calculator requirements:
-`CALC_SPEC.md`. Shared dark-theme design tokens for both tabs:
+v0.1.5 reworked the spreadsheet for
+Excel parity and gave the app a macOS-native look (light/dark, system
+accent). Spreadsheet requirements: `SPEC.md`. Calculator requirements:
+`CALC_SPEC.md`. Design direction and tokens for both tabs:
 `DESIGN.md`. Phase-by-phase build plan with ready-to-use prompts:
 `PROMPTS.md`.
 
@@ -48,6 +50,13 @@ Spreadsheet requirements: `SPEC.md`. Calculator requirements:
 - One component per file, colocated in `src/tabs/` for tab-level
   components and `src/tabs/spreadsheet/` for spreadsheet internals as it
   grows (create this folder when Phase 1 starts)
+- Spreadsheet logic that can be pure is pure and unit-tested
+  (`engine.ts`, `formulaEdit.ts`, `fill.ts`, `clipboard.ts`,
+  `navigation.ts`, `history.ts`, `geometry.ts`); `SpreadsheetTab.tsx`
+  holds state and event handling. Only `engine.ts` imports HyperFormula.
+- The grid draws selection, outlines and the in-cell editor as overlays
+  positioned from `geometry.ts`; cells re-render only when content or
+  formatting changes. Keep it that way — don't put selection state on cells.
 - Keep the HyperFormula instance and the formatting store as separate,
   clearly-named pieces of state — don't let formatting logic leak into
   the formula engine wrapper or vice versa (see SPEC.md → Architecture
