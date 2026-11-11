@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+// Tells the main process once the renderer has had its turn at a
+// "window:hiding" message — i.e. once every tab's flush-to-storage listener
+// (registered below, via onWindowHiding) has run. Quit waits for this, so
+// edits made in the last half second aren't lost to the autosave debounce.
+// The timeout lets those listeners, which were registered later, go first.
+ipcRenderer.on("window:hiding", () => {
+  setTimeout(() => ipcRenderer.send("window:flushed"), 0);
+});
+
 // Renderer-facing API surface. Kept minimal — the renderer only reaches
 // into Node/Electron APIs for the handful of things that genuinely need
 // main-process access (window lifecycle, OS-level login item settings).
@@ -61,5 +70,29 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   installUpdate(): void {
     ipcRenderer.send("updates:install");
+  },
+  // The accent colour chosen in System Settings, as "#rrggbb".
+  getAccentColor(): Promise<string | null> {
+    return ipcRenderer.invoke("appearance:accent");
+  },
+  onAccentColor(callback: (color: string) => void): () => void {
+    const listener = (_event: unknown, color: unknown) => {
+      if (typeof color === "string") callback(color);
+    };
+    ipcRenderer.on("appearance:accent-changed", listener);
+    return () => ipcRenderer.removeListener("appearance:accent-changed", listener);
+  },
+  // Commands chosen from the app menu, the tray menu or the grid's context
+  // menu ("settings", "tab:calculator", "copy", "clear", …).
+  onMenuCommand(callback: (command: string) => void): () => void {
+    const listener = (_event: unknown, command: unknown) => {
+      if (typeof command === "string") callback(command);
+    };
+    ipcRenderer.on("menu:command", listener);
+    return () => ipcRenderer.removeListener("menu:command", listener);
+  },
+  // Pops up the native context menu for the spreadsheet grid.
+  showGridMenu(): void {
+    ipcRenderer.send("menu:grid");
   },
 });

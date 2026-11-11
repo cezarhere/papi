@@ -15,5 +15,15 @@ interface Window {
     installUpdate(): void;
     onWindowShown(callback: () => void): () => void;
     onWindowHiding(callback: () => void): () => void;
+    // The system accent colour as "#rrggbb" (and again whenever the user
+    // changes it in System Settings).
+    getAccentColor(): Promise<string | null>;
+    onAccentColor(callback: (color: string) => void): () => void;
+    // Commands from the app menu, the tray menu and the grid's context
+    // menu: "settings", "tab:calculator", "tab:spreadsheet", and for the
+    // grid "cut", "copy", "paste", "clear".
+    onMenuCommand(callback: (command: string) => void): () => void;
+    // Pops up the native context menu for the spreadsheet grid.
+    showGridMenu(): void;
   };
 }

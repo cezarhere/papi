@@ -1,7 +1,18 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  screen,
+  shell,
+  systemPreferences,
+  Tray,
+} from "electron";
 import { release } from "node:os";
 import {
   checkForUpdatesNow,
@@ -34,6 +45,14 @@ const USER_DATA_NAME = "PAPI";
 // that a later launch would mistake for "already migrated".
 const MIGRATED_ENTRIES = ["Local Storage", "shortcut.json"];
 function pinUserDataPath(): void {
+  // Development escape hatch: point a test run at a throwaway data folder
+  // so it can't touch the installed app's saved sheets and settings.
+  const override = process.env.PAPI_USER_DATA_DIR;
+  if (override && !app.isPackaged) {
+    mkdirSync(override, { recursive: true });
+    app.setPath("userData", override);
+    return;
+  }
   const appData = app.getPath("appData");
   const target = join(appData, USER_DATA_NAME);
   const legacy = join(appData, LEGACY_USER_DATA_NAME);
@@ -219,9 +238,44 @@ if (!gotLock) {
     return applyShortcut(accelerator);
   });
 
-  app.on("before-quit", () => {
+  // Quitting waits (briefly) for the renderer to write out any edits still
+  // sitting in its autosave debounce: the first before-quit is held back,
+  // the renderer is told to flush, and the quit goes ahead once it answers
+  // — or after a short timeout, so a hung renderer can never block quitting.
+  let flushedForQuit = false;
+  app.on("before-quit", (event) => {
     isQuitting = true;
-    mainWindow?.webContents.send("window:hiding");
+    saveWindowBounds();
+    if (flushedForQuit || !mainWindow || mainWindow.isDestroyed()) return;
+    event.preventDefault();
+    flushedForQuit = true;
+    let resumed = false;
+    const resume = () => {
+      if (resumed) return;
+      resumed = true;
+      ipcMain.removeListener("window:flushed", resume);
+      app.quit();
+    };
+    ipcMain.on("window:flushed", resume);
+    setTimeout(resume, 400);
+    mainWindow.webContents.send("window:hiding");
+  });
+
+  // System accent colour, for the renderer's --accent.
+  ipcMain.handle("appearance:accent", (event) => (isTrustedSender(event) ? accentColor() : null));
+
+  // The spreadsheet grid's context menu. A real native menu; its items come
+  // back to the renderer as commands (the grid isn't a text field, so the
+  // standard cut/copy/paste roles wouldn't know what to act on).
+  ipcMain.on("menu:grid", (event) => {
+    if (!isTrustedSender(event) || !mainWindow) return;
+    Menu.buildFromTemplate([
+      { label: "Cut", click: () => sendCommand("cut") },
+      { label: "Copy", click: () => sendCommand("copy") },
+      { label: "Paste", click: () => sendCommand("paste") },
+      { type: "separator" },
+      { label: "Clear Contents", click: () => sendCommand("clear") },
+    ]).popup({ window: mainWindow });
   });
 
   app.on("will-quit", () => {
@@ -246,13 +300,42 @@ if (!gotLock) {
     // and needs a Quit item, or Cmd+Q does nothing (the shortcut is just
     // that menu item's accelerator). Quit goes through app.quit(), whose
     // before-quit handler lets the window close instead of hiding.
+    // As a menu-bar (accessory) app PAPI has no visible menu bar, but the
+    // menu still supplies every standard shortcut: Cmd+, Cmd+1/2, Cmd+W,
+    // Cmd+M, Cmd+H, Cmd+Q.
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
-        { label: "PAPI", submenu: [{ role: "quit" }] },
+        {
+          label: "PAPI",
+          submenu: [
+            { role: "about" },
+            { label: "Check for Updates…", click: checkForUpdatesNow },
+            { type: "separator" },
+            { label: "Settings…", accelerator: "Command+,", click: openSettings },
+            { type: "separator" },
+            { role: "hide" },
+            { role: "hideOthers" },
+            { role: "unhide" },
+            { type: "separator" },
+            { role: "quit" },
+          ],
+        },
         { role: "editMenu" },
-        { label: "Window", submenu: [{ role: "close" }, { role: "minimize" }] },
+        {
+          label: "View",
+          submenu: [
+            { label: "Calculator", accelerator: "Command+1", click: () => sendCommand("tab:calculator") },
+            { label: "Spreadsheet", accelerator: "Command+2", click: () => sendCommand("tab:spreadsheet") },
+          ],
+        },
+        { label: "Window", submenu: [{ role: "close" }, { role: "minimize" }, { role: "zoom" }] },
+        { role: "help", submenu: [{ label: "Report a Problem…", click: reportBug }] },
       ]),
     );
+
+    systemPreferences.on("accent-color-changed", () => {
+      mainWindow?.webContents.send("appearance:accent-changed", accentColor());
+    });
 
     createWindow();
     createTray();
@@ -274,23 +357,93 @@ if (!gotLock) {
   });
 }
 
+// "#rrggbb" of the accent colour chosen in System Settings.
+function accentColor(): string | null {
+  try {
+    const color = systemPreferences.getAccentColor(); // "rrggbbaa"
+    return /^[0-9a-f]{8}$/i.test(color) ? `#${color.slice(0, 6)}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function sendCommand(command: string): void {
+  mainWindow?.webContents.send("menu:command", command);
+}
+
+function openSettings(): void {
+  showWindow();
+  sendCommand("settings");
+}
+
+// Window size and position are remembered between launches, in a small
+// JSON file next to the other main-process settings.
+const DEFAULT_WINDOW_SIZE = { width: 480, height: 440 };
+const MIN_WINDOW_SIZE = { width: 380, height: 300 };
+
+function windowStatePath(): string {
+  return join(app.getPath("userData"), "window.json");
+}
+
+function loadWindowBounds(): Electron.Rectangle | null {
+  try {
+    if (!existsSync(windowStatePath())) return null;
+    const parsed: unknown = JSON.parse(readFileSync(windowStatePath(), "utf-8"));
+    if (!parsed || typeof parsed !== "object") return null;
+    const { x, y, width, height } = parsed as Record<string, unknown>;
+    if (![x, y, width, height].every((value) => typeof value === "number" && Number.isFinite(value))) return null;
+    const bounds = {
+      x: Math.round(x as number),
+      y: Math.round(y as number),
+      width: Math.max(MIN_WINDOW_SIZE.width, Math.round(width as number)),
+      height: Math.max(MIN_WINDOW_SIZE.height, Math.round(height as number)),
+    };
+    // Only reuse a position that's still on a connected display (an external
+    // monitor may have been unplugged since).
+    const area = screen.getDisplayMatching(bounds).workArea;
+    const visible =
+      bounds.x < area.x + area.width - 60 &&
+      bounds.x + bounds.width > area.x + 60 &&
+      bounds.y >= area.y &&
+      bounds.y < area.y + area.height - 60;
+    return visible ? bounds : { ...bounds, x: area.x + 40, y: area.y + 40 };
+  } catch {
+    return null;
+  }
+}
+
+function saveWindowBounds(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isFullScreen() || mainWindow.isMinimized()) return;
+  try {
+    writeFileSync(windowStatePath(), JSON.stringify(mainWindow.getNormalBounds()));
+  } catch (error) {
+    console.error("Failed to persist window bounds:", error);
+  }
+}
+
 function createWindow(): void {
+  const savedBounds = loadWindowBounds();
   mainWindow = new BrowserWindow({
-    width: 465,
-    height: 433,
+    ...(savedBounds ?? DEFAULT_WINDOW_SIZE),
+    minWidth: MIN_WINDOW_SIZE.width,
+    minHeight: MIN_WINDOW_SIZE.height,
     show: false,
     // Numi-style chrome: no separate native title bar (which macOS
     // otherwise renders light/white regardless of app theme) — traffic
     // lights float directly over the app's own dark background instead.
-    // backgroundColor matches --bg-primary (theme.css) so there's no
-    // white flash before the renderer paints, either.
+    // The window's background is a system vibrancy material (follows light
+    // and dark appearance on its own): the app's title bar, toolbar and
+    // status bar are translucent over it, the content area is opaque. The
+    // transparent backgroundColor is what lets the material show.
     titleBarStyle: "hiddenInset",
+    vibrancy: "under-window",
+    visualEffectState: "followWindow",
     // Explicit rather than the OS default — the default position was
     // colliding with the tab bar once that got shrunk (Phase E), and an
     // explicit position means App.css's clearance padding can match it
     // exactly instead of guessing at what macOS picked.
     trafficLightPosition: { x: 14, y: 13 },
-    backgroundColor: "#1e1e1e",
+    backgroundColor: "#00000000",
     webPreferences: {
       // .cjs, forced in electron.vite.config.ts — a default-ESM preload
       // (this project's "type": "module") silently fails to load at all
@@ -327,6 +480,30 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     if (mainWindow) showOnCurrentSpace(mainWindow);
+  });
+
+  // Remember where the window was put (debounced: these fire continuously
+  // during a drag).
+  let boundsTimer: NodeJS.Timeout | null = null;
+  const scheduleBoundsSave = () => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(saveWindowBounds, 400);
+  };
+  mainWindow.on("resize", scheduleBoundsSave);
+  mainWindow.on("move", scheduleBoundsSave);
+
+  // Text fields get the standard edit menu on right-click (Electron has no
+  // context menu of its own). The spreadsheet grid asks for its own menu
+  // over IPC instead ("menu:grid").
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    if (!params.isEditable || !mainWindow) return;
+    Menu.buildFromTemplate([
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { type: "separator" },
+      { role: "selectAll" },
+    ]).popup({ window: mainWindow });
   });
 
   // Same "hide, don't quit" rule for the window's own close button.
@@ -436,22 +613,23 @@ function createTray(): void {
 
   tray = new Tray(image);
   tray.setToolTip("PAPI");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Show", click: showWindow },
-      { type: "separator" },
-      { label: `PAPI ${app.getVersion()}`, enabled: false },
-      { label: "Check for Updates…", click: checkForUpdatesNow },
-      { label: "Report a Problem…", click: reportBug },
-      { type: "separator" },
-      {
-        label: "Quit",
-        click: () => {
-          isQuitting = true;
-          app.quit();
-        },
-      },
-    ]),
-  );
-  tray.on("click", toggleWindow);
+  // Left-click shows/hides the window; right-click (or Control-click) opens
+  // the menu. The menu is popped up by hand rather than attached with
+  // setContextMenu, which on macOS would open it on *every* click and leave
+  // no click for toggling.
+  const menu = Menu.buildFromTemplate([
+    { label: "Show PAPI", click: showWindow },
+    { label: "Settings…", click: openSettings },
+    { type: "separator" },
+    { label: `Version ${app.getVersion()}`, enabled: false },
+    { label: "Check for Updates…", click: checkForUpdatesNow },
+    { label: "Report a Problem…", click: reportBug },
+    { type: "separator" },
+    { label: "Quit PAPI", click: () => app.quit() },
+  ]);
+  tray.on("click", (event) => {
+    if (event.ctrlKey) tray?.popUpContextMenu(menu);
+    else toggleWindow();
+  });
+  tray.on("right-click", () => tray?.popUpContextMenu(menu));
 }
