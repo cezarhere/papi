@@ -13,6 +13,14 @@ export interface EditingState {
   // with the formula bar), but only the "cell" source should steal DOM
   // focus to it; "formula-bar" means the user is typing there instead.
   source: "cell" | "formula-bar";
+  // Excel's two edit modes. "enter": started by typing over the cell —
+  // arrow keys commit and move on (or, in a formula, pick cells). "edit":
+  // started by double-click / F2 / the formula bar — arrow keys move the
+  // caret within the text.
+  mode: "enter" | "edit";
+  // Caret position in `value`, tracked so function autocomplete knows
+  // which word is being typed.
+  caret: number;
 }
 
 // A selected range, defined by where the drag/click started (anchor) and

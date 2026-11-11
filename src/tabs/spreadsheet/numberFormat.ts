@@ -69,3 +69,49 @@ export function formatNumberValue(value: number, format: NumberFormat, decimals?
 export function formatPlainNumber(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
+
+// What the engine inferred from how a value was typed ("1/2/2026", "50%",
+// "$12.50", "12:30") — how a General cell is shown when the user hasn't
+// picked a number format themselves.
+export type AutoKind = "date" | "time" | "datetime" | "percent" | "usd" | "eur" | "gbp";
+
+// The explicit format an auto-detected kind corresponds to, where there is
+// one — so "more decimals" on a typed $12.50 keeps it a dollar amount.
+export function autoToNumberFormat(auto: AutoKind | null): NumberFormat | null {
+  if (auto === null || auto === "time" || auto === "datetime") return null;
+  return auto;
+}
+
+function formatClock(value: number): string {
+  const totalSeconds = Math.round((value - Math.floor(value)) * 86_400) % 86_400;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return seconds === 0 ? `${hours}:${pad(minutes)}` : `${hours}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+function formatShortDate(value: number): string {
+  const date = new Date((Math.floor(value) - SERIAL_UNIX_OFFSET) * MS_PER_DAY);
+  if (Number.isNaN(date.getTime())) return String(value);
+  // System locale, numeric: reads back the way it was typed.
+  return date.toLocaleDateString(undefined, { timeZone: "UTC" });
+}
+
+export function formatAutoValue(value: number, auto: AutoKind): string {
+  if (!Number.isFinite(value)) return String(value);
+  switch (auto) {
+    case "date":
+      return formatShortDate(value);
+    case "time":
+      return formatClock(value);
+    case "datetime":
+      return `${formatShortDate(value)} ${formatClock(value)}`;
+    case "percent":
+      return value.toLocaleString("en-US", { style: "percent", maximumFractionDigits: 2 });
+    case "usd":
+    case "eur":
+    case "gbp":
+      return formatNumberValue(value, auto);
+  }
+}

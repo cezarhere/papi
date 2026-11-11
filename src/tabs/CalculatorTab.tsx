@@ -56,7 +56,13 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export default function CalculatorTab() {
+interface CalculatorTabProps {
+  // False while the Spreadsheet tab is showing. Both tabs stay mounted (see
+  // App.tsx); a hidden one mustn't take focus.
+  active: boolean;
+}
+
+export default function CalculatorTab({ active }: CalculatorTabProps) {
   const [lines, setLines] = useState<CalculatorLine[]>(() => {
     const saved = loadCalculatorState();
     return saved && saved.length > 0 ? saved.map((raw) => createLine(raw)) : [createLine()];
@@ -133,18 +139,19 @@ export default function CalculatorTab() {
   // — e.g. mid-edit when the window merely toggles OS focus without
   // ever having been hidden.
   useEffect(() => {
+    if (!active) return;
     function focusFirstLineIfNeeded() {
-      const active = document.activeElement;
+      const focused = document.activeElement;
       const alreadyFocusedHere =
-        active instanceof HTMLTextAreaElement &&
-        Object.values(inputRefs.current).includes(active);
+        focused instanceof HTMLTextAreaElement &&
+        Object.values(inputRefs.current).includes(focused);
       if (alreadyFocusedHere) return;
       const container = containerRef.current;
       container?.querySelector<HTMLTextAreaElement>(".calc-line-input")?.focus();
     }
     focusFirstLineIfNeeded();
     return window.electronAPI?.onWindowShown(focusFirstLineIfNeeded);
-  }, []);
+  }, [active]);
 
   // Ends a drag-select wherever the mouse button comes up, even outside
   // any line — same reasoning as the spreadsheet grid's equivalent effect.

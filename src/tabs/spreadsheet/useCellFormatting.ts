@@ -8,28 +8,34 @@ function isEmptyFormat(format: CellFormat): boolean {
   return !format.bold && !format.italic && !format.fill && !format.numberFormat;
 }
 
-// Before/after snapshot of the cells touched by one applyFormat call, keyed
-// by address — what the undo history needs to replay the change either way.
+// Before/after snapshot of the cells touched by one change, keyed by
+// address — what the undo history needs to replay the change either way.
 export type FormatSnapshot = Record<string, CellFormat | undefined>;
+
+export interface FormatChange {
+  before: FormatSnapshot;
+  after: FormatSnapshot;
+}
 
 export interface CellFormatting {
   // The raw store, keyed by "A1"-style address — for persistence (save).
   formats: Record<string, CellFormat>;
   getFormat(address: CellAddress): CellFormat;
+  // Runs `updater` over each address (toolbar actions).
   applyFormat(
     addresses: CellAddress[],
-    updater: (current: CellFormat) => CellFormat,
-  ): { before: FormatSnapshot; after: FormatSnapshot };
+    updater: (current: CellFormat, address: CellAddress) => CellFormat,
+  ): FormatChange;
+  // Sets (or, with undefined, clears) whole formats by key — what paste,
+  // fill and cut use to carry formatting along with content.
+  setMany(next: FormatSnapshot): FormatChange;
   restore(snapshot: FormatSnapshot): void;
-  // Replaces the entire store outright — for loading a saved file. Not
-  // undo-tracked; loading a document resets history.
-  replaceAll(next: Record<string, CellFormat>): void;
 }
 
-// Owns cell formatting (bold/italic/fill), kept entirely separate from the
-// HyperFormula instance per SPEC.md's architecture decisions.
-export function useCellFormatting(): CellFormatting {
-  const [formats, setFormats] = useState<Record<string, CellFormat>>({});
+// Owns cell formatting (bold/italic/fill/number format), kept entirely
+// separate from the formula engine per SPEC.md's architecture decisions.
+export function useCellFormatting(initial: Record<string, CellFormat>): CellFormatting {
+  const [formats, setFormats] = useState<Record<string, CellFormat>>(initial);
 
   const getFormat = useCallback(
     (address: CellAddress): CellFormat => formats[addressKey(address)] ?? EMPTY_FORMAT,
@@ -40,20 +46,19 @@ export function useCellFormatting(): CellFormatting {
   // only ever called from event handlers, so the render's `formats` is
   // already current, and it lets us return a snapshot without risking a
   // side-effecting updater running twice under StrictMode.
-  const applyFormat = useCallback(
-    (addresses: CellAddress[], updater: (current: CellFormat) => CellFormat) => {
+  const setMany = useCallback(
+    (changes: FormatSnapshot): FormatChange => {
       const before: FormatSnapshot = {};
       const after: FormatSnapshot = {};
       const next = { ...formats };
-      for (const address of addresses) {
-        const key = addressKey(address);
+      for (const [key, value] of Object.entries(changes)) {
         before[key] = formats[key];
-        const updated = updater(formats[key] ?? EMPTY_FORMAT);
-        after[key] = updated;
-        if (isEmptyFormat(updated)) {
+        if (value === undefined || isEmptyFormat(value)) {
+          after[key] = undefined;
           delete next[key];
         } else {
-          next[key] = updated;
+          after[key] = value;
+          next[key] = value;
         }
       }
       setFormats(next);
@@ -62,24 +67,24 @@ export function useCellFormatting(): CellFormatting {
     [formats],
   );
 
-  const restore = useCallback(
-    (snapshot: FormatSnapshot) => {
-      const next = { ...formats };
-      for (const [key, value] of Object.entries(snapshot)) {
-        if (value === undefined || isEmptyFormat(value)) {
-          delete next[key];
-        } else {
-          next[key] = value;
-        }
+  const applyFormat = useCallback(
+    (addresses: CellAddress[], updater: (current: CellFormat, address: CellAddress) => CellFormat): FormatChange => {
+      const changes: FormatSnapshot = {};
+      for (const address of addresses) {
+        const key = addressKey(address);
+        changes[key] = updater(formats[key] ?? EMPTY_FORMAT, address);
       }
-      setFormats(next);
+      return setMany(changes);
     },
-    [formats],
+    [formats, setMany],
   );
 
-  const replaceAll = useCallback((next: Record<string, CellFormat>) => {
-    setFormats(next);
-  }, []);
+  const restore = useCallback(
+    (snapshot: FormatSnapshot) => {
+      setMany(snapshot);
+    },
+    [setMany],
+  );
 
-  return { formats, getFormat, applyFormat, restore, replaceAll };
+  return { formats, getFormat, applyFormat, setMany, restore };
 }

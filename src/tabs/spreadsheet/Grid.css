@@ -1,22 +1,27 @@
+/* Layers, bottom to top:
+     grid lines (0) < cells (1) < spilled text (2) < selection & outlines (3)
+     < the in-cell editor (4) < sticky headers (5) < the corner (6). */
 .grid {
+  position: relative;
   display: grid;
-  border-top: 1px solid var(--border);
-  border-left: 1px solid var(--border);
   font-size: 13px;
-  user-select: none;
+  font-variant-numeric: tabular-nums;
 }
+
+/* ---- headers ---- */
 
 .grid-header {
   position: sticky;
-  z-index: 2;
-  background: var(--bg-elevated);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--bg-header);
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
   color: var(--text-secondary);
-  font-weight: 500;
+  font-size: 11px;
+  cursor: default;
 }
 
 .grid-header-col {
@@ -30,121 +35,224 @@
 .grid-corner {
   top: 0;
   left: 0;
-  z-index: 3;
+  z-index: 6;
 }
 
-.grid-cell {
-  position: relative;
-  display: flex;
-  align-items: center;
-  padding: 0 4px;
-  background: var(--bg-primary);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  cursor: cell;
+/* Headers of the rows/columns the selection touches. The tint sits on top
+   of the opaque header colour (it's translucent, and cells scroll beneath). */
+.grid-header.is-selected {
+  background: linear-gradient(var(--accent-tint), var(--accent-tint)), var(--bg-header);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ---- grid lines ---- */
+
+.grid-line {
+  pointer-events: none;
+}
+
+.grid-line-col {
+  border-right: 1px solid var(--grid-line);
+}
+
+.grid-line-row {
+  border-bottom: 1px solid var(--grid-line);
+}
+
+/* ---- cells ---- */
+
+.cell {
+  z-index: 1;
+  /* Stops short of the grid lines on its right and bottom edges. */
+  margin: 0 1px 1px 0;
+  padding: 0 5px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.grid-cell-in-selection {
-  background: var(--selection-bg);
-}
-
-.grid-cell-active {
-  z-index: 1;
-  outline: 2px solid var(--text-accent);
-  outline-offset: -2px;
-}
-
-.grid-cell-fill-preview {
-  outline: 1px dashed var(--text-accent);
-  outline-offset: -1px;
-}
-
-.grid-cell-copied {
-  z-index: 1;
-  outline: 2px dashed var(--text-accent);
-  outline-offset: -2px;
-}
-
-/* Persistent outline around every range the formula being edited refers
-   to (Excel-style). Drawn per side by a pseudo-element, only on the outer
-   edge of each range: a block like B2:C4 gets one rectangle with no lines
-   between its cells, and neighbouring cells that belong to the same range
-   share one border. */
-.grid-cell-ref {
-  z-index: 1;
-}
-
-.grid-cell-ref::after {
-  content: "";
-  position: absolute;
-  inset: 0;
+  line-height: 23px;
   pointer-events: none;
-  border: 0 dashed var(--text-result);
 }
 
-.grid-cell-ref-top::after {
-  border-top-width: 2px;
+.cell-number {
+  text-align: right;
 }
 
-.grid-cell-ref-right::after {
-  border-right-width: 2px;
+.cell-error,
+.cell-boolean {
+  text-align: center;
 }
 
-.grid-cell-ref-bottom::after {
-  border-bottom-width: 2px;
+.cell-error {
+  color: var(--text-error);
+  /* Errors carry a tooltip explaining them. */
+  pointer-events: auto;
 }
 
-.grid-cell-ref-left::after {
-  border-left-width: 2px;
+/* Text running on across empty neighbours: opaque, so it hides the grid
+   lines it crosses instead of being struck through by them. */
+.cell-spill {
+  z-index: 2;
+  background: var(--bg-content);
 }
 
-.grid-cell-input {
-  width: 100%;
-  height: 100%;
-  border: none;
-  outline: none;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  font: inherit;
-  color: inherit;
+.cell-bold {
+  font-weight: 600;
+}
+
+.cell-italic {
+  font-style: italic;
+}
+
+/* Fill presets are light pastels in both themes, so the text on them is
+   always dark — this is about contrast against user-chosen content, not
+   app chrome. */
+.cell-filled {
+  color: #1a1a1a;
+}
+
+.cell-filled.cell-error {
+  color: #c4261b;
+}
+
+/* ---- selection and outlines ---- */
+
+.overlay {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.overlay-tint {
+  background: var(--accent-tint);
+}
+
+.overlay-selection {
+  border: 2px solid var(--accent);
+  border-radius: 1px;
+}
+
+/* A single selected cell glides to its new place, as in Numbers. */
+.overlay-animated {
+  transition:
+    left 0.07s ease-out,
+    top 0.07s ease-out,
+    width 0.07s ease-out,
+    height 0.07s ease-out;
 }
 
 .fill-handle {
   position: absolute;
-  /* Fully inside the cell: cells are overflow:hidden, so a handle straddling
-     the corner was clipped to a ~3px sliver that was nearly impossible to grab. */
-  right: 0;
-  bottom: 0;
-  width: 8px;
-  height: 8px;
-  background: var(--text-accent);
-  border: 1px solid var(--bg-primary);
+  right: -6px;
+  bottom: -6px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--bg-content);
+  border-radius: 1px;
+  background: var(--accent);
   cursor: crosshair;
-  z-index: 2;
+  pointer-events: auto;
+  box-sizing: content-box;
 }
 
-.grid-cell-numeric {
-  justify-content: flex-end;
+/* A bigger invisible target around the small visible square. */
+.fill-handle::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
+
+.overlay-fill-preview {
+  border: 1px dashed var(--text-secondary);
+}
+
+/* "Marching ants" around a copied (or cut) range. */
+.overlay-copied {
+  overflow: visible;
+}
+
+.overlay-copied rect {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  animation: marching-ants 0.6s linear infinite;
+}
+
+.overlay-cut rect {
+  stroke-dasharray: 3 3;
+}
+
+@keyframes marching-ants {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+
+/* Ranges the formula being edited refers to — one colour per reference. */
+.overlay-ref {
+  border: 2px solid var(--ref-color);
+  background: color-mix(in srgb, var(--ref-color) 10%, transparent);
+}
+
+.overlay-ref-0 {
+  --ref-color: #3478f6;
+}
+.overlay-ref-1 {
+  --ref-color: #e5484d;
+}
+.overlay-ref-2 {
+  --ref-color: #8e4ec6;
+}
+.overlay-ref-3 {
+  --ref-color: #30a46c;
+}
+.overlay-ref-4 {
+  --ref-color: #f76b15;
+}
+.overlay-ref-5 {
+  --ref-color: #12a594;
+}
+
+/* ---- the in-cell editor ---- */
+
+.cell-editor {
+  position: absolute;
+  z-index: 4;
+  margin: -1px 0 0 -1px;
+  padding: 0 5px 0 6px;
+  border: none;
+  border-radius: 1px;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: var(--bg-content);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: text;
+  /* Grows with its text instead of scrolling inside a narrow column. */
+  field-sizing: content;
+}
+
+.grid input.cell-editor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* ---- column resize handles ---- */
 
 /* Grab zone on the right edge of each column header. It must sit fully
    *inside* its own header: the next column's header is painted over any
-   part that spills past the border, which left only a ~4px sliver of the
-   old border-straddling handle actually clickable. Sticky headers are
-   already a positioning context for this absolute child. */
+   part that spills past the border. */
 .grid-col-resize-handle {
   position: absolute;
   top: 0;
   /* -1px: also covers the header's own 1px right border, the exact line
-     people aim at (an absolute child is positioned inside the padding box,
-     which stops short of the border). */
+     people aim at. */
   right: -1px;
   bottom: 0;
-  width: 10px;
+  width: 8px;
   cursor: col-resize;
   z-index: 1;
 }
@@ -152,10 +260,21 @@
 .grid-col-resize-handle-left {
   right: auto;
   left: 0;
-  width: 6px;
+  width: 5px;
 }
 
-.grid-col-resize-handle:hover {
-  background: var(--text-accent);
-  opacity: 0.5;
+.grid-col-resize-handle:hover::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  right: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.grid-col-resize-handle-left:hover::after {
+  right: auto;
+  left: -1px;
 }

@@ -27,16 +27,57 @@ function formatForDisplay(accelerator: string): string {
     .replace("Option", "⌥")
     .replace("Alt", "⌥")
     .replace("Shift", "⇧")
-    .replace(/\+/g, "");
+    .replace("Return", "↩")
+    .replace("Space", "Space")
+    .replace(/\+(?=.)/g, "");
+}
+
+// Physical key (KeyboardEvent.code) -> Electron accelerator key name. The
+// physical key is what matters: with Option or Shift held, macOS reports
+// e.key as the character that combination *types* (Option+K is "˚",
+// Shift+1 is "!"), which is not a key name Electron can register.
+const CODE_TO_KEY: Record<string, string> = {
+  Space: "Space",
+  Enter: "Return",
+  Tab: "Tab",
+  Backspace: "Backspace",
+  Delete: "Delete",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  Home: "Home",
+  End: "End",
+  PageUp: "PageUp",
+  PageDown: "PageDown",
+  Minus: "-",
+  Equal: "=",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Semicolon: ";",
+  Quote: "'",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Backquote: "`",
+};
+
+function codeToKey(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  return CODE_TO_KEY[code] ?? null;
 }
 
 // Global shortcuts need at least one modifier — a bare key would either
 // be unusable (Electron requires a modifier for most global accelerators
 // anyway) or too easy to trigger by accident from any app. Pure-modifier
-// keypresses (still holding Shift, nothing else yet) return null so the
-// caller keeps waiting for a real combo instead of registering nothing.
+// keypresses (still holding Shift, nothing else yet) and keys with no
+// accelerator name return null so the caller keeps waiting for a real combo.
 function eventToAccelerator(e: KeyboardEvent): string | null {
-  if (e.key === "Meta" || e.key === "Control" || e.key === "Alt" || e.key === "Shift") return null;
+  const key = codeToKey(e.code);
+  if (!key) return null;
 
   const parts: string[] = [];
   if (e.metaKey) parts.push("Command");
@@ -44,19 +85,20 @@ function eventToAccelerator(e: KeyboardEvent): string | null {
   if (e.altKey) parts.push("Option");
   if (e.shiftKey) parts.push("Shift");
   if (parts.length === 0) return null;
-
-  let key = e.key;
-  if (key === " ") key = "Space";
-  else if (key.length === 1) key = key.toUpperCase();
-  // Longer names (ArrowUp, Enter, Escape, Tab, Backspace, ...) already
-  // match Electron's accelerator key names as-is for the common cases.
+  // Shift alone only makes a capital letter; it isn't a usable shortcut.
+  if (parts.length === 1 && parts[0] === "Shift") return null;
 
   parts.push(key);
   return parts.join("+");
 }
 
-export default function SettingsPopover() {
-  const [isOpen, setIsOpen] = useState(false);
+interface SettingsPopoverProps {
+  // Owned by App.tsx so the menu's "Settings…" (Cmd+,) can open it too.
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export default function SettingsPopover({ isOpen, onOpenChange: setIsOpen }: SettingsPopoverProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { precision, setPrecision } = usePrecision();
   // null while loading (or unavailable — undefined in the plain-browser
@@ -114,7 +156,7 @@ export default function SettingsPopover() {
       setShortcutState(accelerator);
       setShortcutError(null);
     } else {
-      setShortcutError("Already in use by another app");
+      setShortcutError("That shortcut isn't available — another app may be using it");
     }
   }
 
@@ -147,7 +189,7 @@ export default function SettingsPopover() {
         className="settings-gear-button"
         aria-label="Settings"
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => setIsOpen(!isOpen)}
       >
         <GearIcon />
       </button>
@@ -168,7 +210,7 @@ export default function SettingsPopover() {
       {isOpen && (
         <div className="settings-popover" role="dialog" aria-label="Settings">
           <label className="settings-row">
-            <span>Precision</span>
+            <span>Decimal places</span>
             <select
               value={precision}
               onChange={(e) => setPrecision(Number(e.target.value))}
@@ -185,6 +227,8 @@ export default function SettingsPopover() {
               <span>Launch at login</span>
               <input
                 type="checkbox"
+                className="switch"
+                role="switch"
                 checked={launchAtLogin}
                 onChange={(e) => handleLaunchAtLoginChange(e.target.checked)}
               />
@@ -192,9 +236,11 @@ export default function SettingsPopover() {
           )}
           {autoUpdate !== null && (
             <label className="settings-row">
-              <span>Check for updates automatically</span>
+              <span>Check for updates</span>
               <input
                 type="checkbox"
+                className="switch"
+                role="switch"
                 checked={autoUpdate}
                 onChange={(e) => handleAutoUpdateChange(e.target.checked)}
               />
@@ -202,16 +248,16 @@ export default function SettingsPopover() {
           )}
           {shortcut !== null && (
             <div className="settings-row">
-              <span>Shortcut</span>
+              <span>Show / hide shortcut</span>
               <button
                 type="button"
-                className="settings-shortcut-button"
+                className={isRecording ? "settings-shortcut-button is-recording" : "settings-shortcut-button"}
                 onClick={() => {
                   setShortcutError(null);
                   setIsRecording(true);
                 }}
               >
-                {isRecording ? "Press a key…" : formatForDisplay(shortcut)}
+                {isRecording ? "Type shortcut…" : formatForDisplay(shortcut)}
               </button>
             </div>
           )}

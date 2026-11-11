@@ -1,15 +1,96 @@
+/* Design tokens (DESIGN.md). Two value sets — light and dark — chosen by the
+   system appearance; --accent is replaced at runtime with the accent colour
+   from System Settings when running in Electron (useSystemAppearance.ts). */
 :root {
-  --bg-primary: #1e1e1e; /* app background */
-  --bg-elevated: #262626; /* toolbar, formula bar, panels */
-  --border: #3a3a3a;
+  color-scheme: light dark;
 
-  --text-primary: #ececea; /* main numbers / input text */
-  --text-secondary: #8a8a88; /* muted chrome, placeholders */
-  --text-accent: #5b9bd5; /* keywords / variables, e.g. "sum" */
-  --text-result: #a8d24c; /* computed values, Numi's green */
-  --text-error: #e0645a; /* parse errors, circular refs */
-
-  --selection-bg: #2f4a63; /* selected cell / active line */
-
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --accent: #007aff;
+
+  --bg-content: #ffffff; /* the working surface: grid, calculator lines */
+  --bg-chrome: #f3f3f2; /* title bar, toolbar, status bar */
+  --bg-header: #f7f7f6; /* grid row/column headers */
+  --bg-raised: #ffffff; /* popovers, the selected segment */
+
+  --separator: rgba(0, 0, 0, 0.12); /* between areas of chrome */
+  --grid-line: #e4e4e2;
+
+  --text-primary: rgba(0, 0, 0, 0.86);
+  --text-secondary: rgba(0, 0, 0, 0.5);
+  --text-tertiary: rgba(0, 0, 0, 0.3);
+  --text-result: #2c8a1d; /* computed values */
+  --text-error: #d92c20;
+
+  --control-fill: rgba(0, 0, 0, 0.06); /* resting fill of grouped controls */
+  --control-hover: rgba(0, 0, 0, 0.07);
+  --control-active: rgba(0, 0, 0, 0.12);
+  --shadow-popover: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 10px 30px rgba(0, 0, 0, 0.18);
+  --shadow-segment: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.14);
+
+  /* Derived from the accent. */
+  --accent-tint: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 45%, transparent);
+
+  /* Older names, still used around the calculator tab. */
+  --bg-primary: var(--bg-content);
+  --bg-elevated: var(--bg-chrome);
+  --border: var(--separator);
+  --text-accent: var(--accent);
+  --selection-bg: var(--accent-soft);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #0a84ff;
+
+    --bg-content: #1e1e1e;
+    --bg-chrome: #2a2a2a;
+    --bg-header: #252525;
+    --bg-raised: #3a3a3c;
+
+    --separator: rgba(255, 255, 255, 0.11);
+    --grid-line: #333333;
+
+    --text-primary: rgba(255, 255, 255, 0.88);
+    --text-secondary: rgba(255, 255, 255, 0.52);
+    --text-tertiary: rgba(255, 255, 255, 0.28);
+    --text-result: #a8d24c;
+    --text-error: #ff6b5e;
+
+    --control-fill: rgba(255, 255, 255, 0.08);
+    --control-hover: rgba(255, 255, 255, 0.09);
+    --control-active: rgba(255, 255, 255, 0.16);
+    --shadow-popover: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 12px 34px rgba(0, 0, 0, 0.55);
+    --shadow-segment: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4);
+
+    --accent-tint: color-mix(in srgb, var(--accent) 20%, transparent);
+    --accent-soft: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+}
+
+/* In the Electron window the chrome is translucent: the window's own
+   vibrancy material (electron/main/index.ts) shows through it. */
+:root.is-electron {
+  --bg-chrome: rgba(246, 246, 245, 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root.is-electron {
+    --bg-chrome: rgba(44, 44, 44, 0.62);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root.is-electron {
+    --bg-chrome: #f3f3f2;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+  :root.is-electron {
+    --bg-chrome: #2a2a2a;
+  }
 }

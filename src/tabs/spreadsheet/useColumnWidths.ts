@@ -9,24 +9,30 @@ export interface ColumnWidths {
   widths: Record<string, number>;
   getWidth(col: number): number;
   setWidth(col: number, width: number): void;
-  replaceAll(next: Record<string, number>): void;
 }
 
 export function clampWidth(width: number): number {
   return Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(width)));
 }
 
+function cleanWidths(raw: Record<string, number>): Record<string, number> {
+  const cleaned: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) cleaned[key] = clampWidth(value);
+  return cleaned;
+}
+
 // Per-column widths; columns not in the store use the default CELL_WIDTH.
 // Kept outside the formula engine and the format store (neither concept
 // applies) and not undo-tracked, like most spreadsheet apps.
-export function useColumnWidths(): ColumnWidths {
-  const [widths, setWidths] = useState<Record<string, number>>({});
+export function useColumnWidths(initial: Record<string, number>): ColumnWidths {
+  const [widths, setWidths] = useState<Record<string, number>>(() => cleanWidths(initial));
 
   const getWidth = useCallback((col: number) => widths[String(col)] ?? CELL_WIDTH, [widths]);
 
   const setWidth = useCallback((col: number, width: number) => {
     const clamped = clampWidth(width);
     setWidths((prev) => {
+      if ((prev[String(col)] ?? CELL_WIDTH) === clamped) return prev;
       const next = { ...prev };
       if (clamped === CELL_WIDTH) delete next[String(col)];
       else next[String(col)] = clamped;
@@ -34,11 +40,5 @@ export function useColumnWidths(): ColumnWidths {
     });
   }, []);
 
-  const replaceAll = useCallback((next: Record<string, number>) => {
-    const cleaned: Record<string, number> = {};
-    for (const [key, value] of Object.entries(next)) cleaned[key] = clampWidth(value);
-    setWidths(cleaned);
-  }, []);
-
-  return { widths, getWidth, setWidth, replaceAll };
+  return { widths, getWidth, setWidth };
 }

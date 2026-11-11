@@ -1,123 +1,168 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { addressKey, formatRangeReference } from "./spreadsheet/address";
-import { CELL_WIDTH, COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
+import { encodeTsv, parseTsv } from "./spreadsheet/clipboard";
+import { CELL_HEIGHT, CELL_WIDTH, COL_HEADER_HEIGHT, MAX_COLS, MAX_ROWS, ROW_HEADER_WIDTH } from "./spreadsheet/constants";
 import { computeFillTarget, unionBounds } from "./spreadsheet/fill";
+import {
+  cycleAbsolute,
+  functionTokenAt,
+  isFormula,
+  normalizeCellInput,
+  refInsertionSpan,
+  replaceSpan,
+  suggestFunctions,
+} from "./spreadsheet/formulaEdit";
 import { parseFormulaRefs } from "./spreadsheet/formulaRefs";
 import FormulaBar from "./spreadsheet/FormulaBar";
+import FunctionSuggestions from "./spreadsheet/FunctionSuggestions";
+import { buildGeometry, colAt, rectFor, rowAt } from "./spreadsheet/geometry";
 import Grid from "./spreadsheet/Grid";
+import { EMPTY_HISTORY, peekRedo, peekUndo, pushHistory, stepHistory, type History } from "./spreadsheet/history";
+import { jumpTarget, lastUsedCell } from "./spreadsheet/navigation";
+import {
+  autoToNumberFormat,
+  defaultDecimals,
+  formatPlainNumber,
+  MAX_DECIMALS,
+  type NumberFormat,
+} from "./spreadsheet/numberFormat";
 import { buildDocument, loadDocumentFromStorage, saveDocumentToStorage } from "./spreadsheet/persistence";
-import { normalizeRange, type RangeBounds } from "./spreadsheet/range";
+import { normalizeRange, singleCellRange, type RangeBounds } from "./spreadsheet/range";
+import { buildSheetView } from "./spreadsheet/sheetView";
 import "./spreadsheet/SpreadsheetTab.css";
+import { summarize } from "./spreadsheet/summary";
 import Toolbar from "./spreadsheet/Toolbar";
 import type { CellAddress, CellFormat, CellRange, EditingState } from "./spreadsheet/types";
-import { useCellFormatting, type FormatSnapshot } from "./spreadsheet/useCellFormatting";
+import { useCellFormatting, type FormatChange, type FormatSnapshot } from "./spreadsheet/useCellFormatting";
+import { clampWidth, useColumnWidths } from "./spreadsheet/useColumnWidths";
 import { useSpreadsheetEngine } from "./spreadsheet/useSpreadsheetEngine";
 import { clamp } from "./spreadsheet/utils";
-import { defaultDecimals, formatNumberValue, formatPlainNumber, MAX_DECIMALS, type NumberFormat } from "./spreadsheet/numberFormat";
-import { summarize } from "./spreadsheet/summary";
-import { clampWidth, useColumnWidths } from "./spreadsheet/useColumnWidths";
 import { useToast } from "../ToastContext";
 
 const rows = MAX_ROWS;
 const cols = MAX_COLS;
 
-type DragMode = "select" | "fill" | "formula-ref" | null;
+// What a mouse drag is currently doing. "cols"/"rows" are drags that
+// started on a header and select whole columns/rows.
+type DragMode = "select" | "cols" | "rows" | "fill" | "formula-ref" | null;
 
-// Tracks the substring of the formula currently occupied by a picked
-// reference, so dragging over more cells can replace it in place instead
-// of appending endlessly.
-interface FormulaRefDrag {
+// A cell reference picked into the formula being edited (with the mouse or
+// the arrow keys), and the stretch of the formula's text it occupies — so
+// dragging or arrowing on replaces it in place instead of appending.
+interface RefPick {
   anchor: CellAddress;
   focus: CellAddress;
-  insertStart: number;
-  insertEnd: number;
+  start: number;
+  end: number;
 }
 
-// A unified undo/redo stack covering both content/formula changes and
-// formatting changes. Content entries carry no data — HyperFormula already
-// tracks the actual before/after internally, so the entry is just a marker
-// telling undo/redo to call engine.undo()/redo() for that slot. Format
-// entries carry a full before/after snapshot, since formatting has no
-// engine of its own to ask.
-type HistoryEntry =
-  | { type: "content" }
-  | { type: "format"; before: FormatSnapshot; after: FormatSnapshot };
-
-interface HistoryState {
-  entries: HistoryEntry[];
-  index: number;
-}
-
-function isFormula(value: string): boolean {
-  return value.startsWith("=");
+// The "marching ants" range. `text` is exactly what was put on the system
+// clipboard: a paste whose text still matches came from this range, and is
+// pasted as formulas + formatting rather than as plain values.
+interface CopiedRange {
+  bounds: RangeBounds;
+  cut: boolean;
+  text: string;
 }
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
+const AUTOSCROLL_INTERVAL_MS = 40;
+const AUTOSCROLL_STEP = 18;
 
-export default function SpreadsheetTab() {
+const sameCell = (a: CellAddress, b: CellAddress) => a.row === b.row && a.col === b.col;
+const toRange = (bounds: RangeBounds): CellRange => ({
+  anchor: { row: bounds.minRow, col: bounds.minCol },
+  focus: { row: bounds.maxRow, col: bounds.maxCol },
+});
+const normalizeNewlines = (text: string) => text.replace(/\r\n?/g, "\n").replace(/\n$/, "");
+
+interface SpreadsheetTabProps {
+  // False while the Calculator tab is showing. The tab stays mounted (so
+  // undo history, selection and scroll position survive a tab switch); it
+  // just mustn't grab focus while hidden.
+  active: boolean;
+}
+
+export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const engine = useSpreadsheetEngine();
-  const formatting = useCellFormatting();
-  const columnWidths = useColumnWidths();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const cellInputRef = useRef<HTMLInputElement>(null);
+  const barInputRef = useRef<HTMLInputElement>(null);
   const showToast = useToast();
-  const editingInputRef = useRef<HTMLInputElement>(null);
-  const [selection, setSelection] = useState<CellRange>({
-    anchor: { row: 0, col: 0 },
-    focus: { row: 0, col: 0 },
-  });
+
+  // The autosaved document is read once, synchronously, and handed to the
+  // three stores as their initial state — there is never a moment where
+  // they're empty and an autosave could write that emptiness back out.
+  const [saved] = useState(loadDocumentFromStorage);
+  const engine = useSpreadsheetEngine(saved?.cells ?? {});
+  const formatting = useCellFormatting(saved?.formats ?? {});
+  const columnWidths = useColumnWidths(saved?.columnWidths ?? {});
+
+  const [selection, setSelection] = useState<CellRange>(singleCellRange({ row: 0, col: 0 }));
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   // Cells a fill-handle drag would write to right now (any direction, see
   // fill.ts), or null while the cursor is still inside the selection.
   const [fillTarget, setFillTarget] = useState<RangeBounds | null>(null);
-  // Range with the dashed "copied" outline. Purely visual — HyperFormula
-  // owns the actual clipboard contents.
-  const [copiedRange, setCopiedRange] = useState<CellRange | null>(null);
-  // In-progress reference pick while editing a formula (click/drag a cell
-  // to insert its address at the caret).
-  const [formulaRefDrag, setFormulaRefDrag] = useState<FormulaRefDrag | null>(null);
-  // Set right after a formula-ref insertion so an effect can move the
-  // input's actual caret there once the new value has been committed.
+  const [copied, setCopied] = useState<CopiedRange | null>(null);
+  const [refPick, setRefPick] = useState<RefPick | null>(null);
+  // Set after the formula text is changed programmatically (a picked
+  // reference, an accepted suggestion, F4) so an effect can put the input's
+  // caret there once the new value has landed in the DOM.
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
-  const [historyState, setHistoryState] = useState<HistoryState>({ entries: [], index: 0 });
+  const [history, setHistory] = useState<History>(EMPTY_HISTORY);
+  // Function autocomplete: highlighted row, whether the user has moved it
+  // (only then does Enter accept instead of committing), and whether Escape
+  // dismissed the list for the word being typed.
+  const [suggestIndex, setSuggestIndex] = useState(0);
+  const [suggestTouched, setSuggestTouched] = useState(false);
+  const [suggestDismissed, setSuggestDismissed] = useState(false);
+  const [suggestPosition, setSuggestPosition] = useState<{ left: number; top: number } | null>(null);
+  // Column a run of Tab presses started in: Enter then returns to it on the
+  // next row, which is how Excel makes typing a table row by row work.
+  const tabOriginRef = useRef<number | null>(null);
 
   const activeCell = selection.anchor;
   const selectionBounds = normalizeRange(selection);
+  const geometry = useMemo(() => buildGeometry(columnWidths.getWidth, rows, cols), [columnWidths.getWidth]);
+  const view = useMemo(() => buildSheetView(engine, formatting.formats, rows, cols), [engine, formatting.formats]);
 
-  // Restores the last autosaved document once on mount, before the
-  // autosave effect below gets a chance to run — hasHydratedRef guards
-  // against that effect writing empty state back out first.
-  const hasHydratedRef = useRef(false);
-  useEffect(() => {
-    const saved = loadDocumentFromStorage();
-    if (saved) {
-      engine.importCells(saved.cells);
-      formatting.replaceAll(saved.formats);
-      columnWidths.replaceAll(saved.columnWidths);
-    }
-    hasHydratedRef.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ---------------------------------------------------------------- autosave
 
-  // Autosaves to localStorage (CALC_SPEC.md "Autosave"), debounced so a
-  // burst of keystrokes/edits doesn't write on every single one; flushed
-  // immediately on window hide / app quit / unload so the last edits
-  // aren't lost to the debounce interval.
+  // Debounced so a burst of edits doesn't write on every one; flushed
+  // immediately on window hide / app quit / unload so the last edits aren't
+  // lost to the debounce interval.
+  const latestRef = useRef({ engine, formats: formatting.formats, widths: columnWidths.widths });
+  latestRef.current = { engine, formats: formatting.formats, widths: columnWidths.widths };
+  const savedStateRef = useRef({ revision: engine.revision, formats: formatting.formats, widths: columnWidths.widths });
   const savePendingRef = useRef(false);
   const flushSave = useCallback(() => {
     if (!savePendingRef.current) return;
     savePendingRef.current = false;
-    saveDocumentToStorage(buildDocument(exportCellsRef.current(), formattingRef.current, columnWidthsRef.current));
+    const latest = latestRef.current;
+    saveDocumentToStorage(buildDocument(latest.engine.exportCells(), latest.formats, latest.widths));
+    savedStateRef.current = { revision: latest.engine.revision, formats: latest.formats, widths: latest.widths };
   }, []);
-  const formattingRef = useRef(formatting.formats);
-  formattingRef.current = formatting.formats;
-  const columnWidthsRef = useRef(columnWidths.widths);
-  columnWidthsRef.current = columnWidths.widths;
-  const exportCellsRef = useRef(engine.exportCells);
-  exportCellsRef.current = engine.exportCells;
 
   useEffect(() => {
-    if (!hasHydratedRef.current) return;
+    const last = savedStateRef.current;
+    if (
+      last.revision === engine.revision &&
+      last.formats === formatting.formats &&
+      last.widths === columnWidths.widths
+    ) {
+      return; // nothing changed since the last save (including: just loaded)
+    }
     savePendingRef.current = true;
     const timeoutId = window.setTimeout(flushSave, AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
@@ -135,120 +180,93 @@ export default function SpreadsheetTab() {
     };
   }, [flushSave]);
 
-  // Focus the grid on mount, and whenever an edit ends, so arrow keys keep
-  // working — committing/canceling unmounts the cell's <input>, which would
-  // otherwise drop focus to the document body.
+  // ------------------------------------------------------------------- focus
+
+  // Keep keyboard focus on the grid whenever nothing is being edited:
+  // committing/canceling an edit removes its <input>, which would otherwise
+  // drop focus to the document body and kill the arrow keys.
   useEffect(() => {
-    if (!editing) containerRef.current?.focus();
-  }, [editing, containerRef]);
+    if (active && !editing) containerRef.current?.focus({ preventScroll: true });
+  }, [editing, active]);
 
-  // Scroll the active cell into view on keyboard nav — the grid is now
-  // always rendered at full size (25x7) rather than clamped to fit the
-  // viewport, so most of it can be scrolled out of sight. Measures actual
-  // rendered rects (rather than hand-computing from CELL_WIDTH/HEIGHT,
-  // which ignores .grid-area's padding) and insets by the sticky header
-  // sizes so a cell can't end up parked behind them.
+  // Re-focus when the window is shown again (hide/show doesn't remount).
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const cellEl = container.querySelector<HTMLElement>(`[data-address="${addressKey(activeCell)}"]`);
-    if (!cellEl) return;
+    if (!active) return;
+    return window.electronAPI?.onWindowShown(() => {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLInputElement || focused instanceof HTMLSelectElement) return;
+      containerRef.current?.focus({ preventScroll: true });
+    });
+  }, [active]);
 
-    const cellRect = cellEl.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const visibleLeft = containerRect.left + ROW_HEADER_WIDTH;
-    const visibleTop = containerRect.top + COL_HEADER_HEIGHT;
+  const activeInput = () => (editing?.source === "formula-bar" ? barInputRef.current : cellInputRef.current);
 
-    if (cellRect.left < visibleLeft) {
-      container.scrollLeft -= visibleLeft - cellRect.left;
-    } else if (cellRect.right > containerRect.right) {
-      container.scrollLeft += cellRect.right - containerRect.right;
-    }
-
-    if (cellRect.top < visibleTop) {
-      container.scrollTop -= visibleTop - cellRect.top;
-    } else if (cellRect.bottom > containerRect.bottom) {
-      container.scrollTop += cellRect.bottom - containerRect.bottom;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCell.row, activeCell.col, containerRef]);
-
-  // After a formula-ref insertion, move the input's caret to just past the
-  // inserted reference once the new value has actually landed in the DOM.
   useEffect(() => {
     if (pendingCaret === null) return;
-    const input = editingInputRef.current;
+    const input = editing?.source === "formula-bar" ? barInputRef.current : cellInputRef.current;
     if (input) {
       input.focus();
       input.setSelectionRange(pendingCaret, pendingCaret);
     }
     setPendingCaret(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCaret]);
 
-  // Finalize a fill, select, or formula-ref drag on mouseup, wherever it
-  // happens to land — the drag can end outside any cell, so this can't be
-  // a per-cell handler.
-  useEffect(() => {
-    if (!dragMode) return;
+  // -------------------------------------------------------------- selection
 
-    function handleMouseUp() {
-      if (dragMode === "fill" && fillTarget !== null) {
-        commitFill(fillTarget);
-      }
-      if (dragMode === "formula-ref") {
-        setFormulaRefDrag(null);
-      }
-      setDragMode(null);
-      setFillTarget(null);
+  // Scrolls just far enough to bring a cell out from under the sticky
+  // headers / into the viewport. Called by keyboard navigation only — mouse
+  // selection never moves the view under the cursor.
+  function reveal(address: CellAddress) {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = rectFor(
+      { minRow: address.row, maxRow: address.row, minCol: address.col, maxCol: address.col },
+      geometry,
+    );
+    if (rect.left < container.scrollLeft + ROW_HEADER_WIDTH) {
+      container.scrollLeft = rect.left - ROW_HEADER_WIDTH;
+    } else if (rect.left + rect.width > container.scrollLeft + container.clientWidth) {
+      container.scrollLeft = rect.left + rect.width - container.clientWidth;
     }
-
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => window.removeEventListener("mouseup", handleMouseUp);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragMode, fillTarget, selection]);
-
-  // Records one undo-able action. Called right after every content mutation
-  // (as a bare "content" marker — HyperFormula owns the actual before/after)
-  // and after every formatting change (with a before/after snapshot).
-  function pushHistory(entry: HistoryEntry) {
-    setHistoryState((prev) => ({
-      entries: [...prev.entries.slice(0, prev.index), entry],
-      index: prev.index + 1,
-    }));
+    if (rect.top < container.scrollTop + COL_HEADER_HEIGHT) {
+      container.scrollTop = rect.top - COL_HEADER_HEIGHT;
+    } else if (rect.top + rect.height > container.scrollTop + container.clientHeight) {
+      container.scrollTop = rect.top + rect.height - container.clientHeight;
+    }
   }
 
-  function performUndo() {
-    if (historyState.index === 0) return;
-    const entry = historyState.entries[historyState.index - 1];
-    if (entry.type === "content") {
-      const address = engine.undo();
-      if (address) setSelection({ anchor: address, focus: address });
-    } else {
-      formatting.restore(entry.before);
-    }
-    setHistoryState((prev) => ({ ...prev, index: prev.index - 1 }));
+  function selectAndReveal(range: CellRange, keepTabOrigin = false) {
+    if (!keepTabOrigin) tabOriginRef.current = null;
+    setSelection(range);
+    reveal(range.focus);
   }
 
-  function performRedo() {
-    if (historyState.index >= historyState.entries.length) return;
-    const entry = historyState.entries[historyState.index];
-    if (entry.type === "content") {
-      const address = engine.redo();
-      if (address) setSelection({ anchor: address, focus: address });
-    } else {
-      formatting.restore(entry.after);
-    }
-    setHistoryState((prev) => ({ ...prev, index: prev.index + 1 }));
+  const clampCell = (row: number, col: number): CellAddress => ({
+    row: clamp(row, 0, rows - 1),
+    col: clamp(col, 0, cols - 1),
+  });
+
+  // Arrow-key movement. `extend` (Shift) grows the selection from its
+  // anchor; `jump` (Cmd) goes to the edge of the current block of data.
+  function navigate(deltaRow: number, deltaCol: number, extend: boolean, jump: boolean) {
+    const from = extend ? selection.focus : selection.anchor;
+    const target = jump
+      ? jumpTarget(engine.isEmpty, from, deltaRow, deltaCol, rows, cols)
+      : clampCell(from.row + deltaRow, from.col + deltaCol);
+    selectAndReveal(extend ? { anchor: selection.anchor, focus: target } : singleCellRange(target));
   }
 
-  function moveSelection(deltaRow: number, deltaCol: number) {
-    setSelection((prev) => {
-      const next = {
-        row: clamp(prev.anchor.row + deltaRow, 0, rows - 1),
-        col: clamp(prev.anchor.col + deltaCol, 0, cols - 1),
-      };
-      return { anchor: next, focus: next };
-    });
+  // Where Enter / Tab go after committing (or on their own).
+  function step(direction: "down" | "up" | "right" | "left") {
+    const from = selection.anchor;
+    if (direction === "right" || direction === "left") {
+      if (tabOriginRef.current === null) tabOriginRef.current = from.col;
+      selectAndReveal(singleCellRange(clampCell(from.row, from.col + (direction === "right" ? 1 : -1))), true);
+      return;
+    }
+    const col = direction === "down" && tabOriginRef.current !== null ? tabOriginRef.current : from.col;
+    selectAndReveal(singleCellRange(clampCell(from.row + (direction === "down" ? 1 : -1), col)));
   }
 
   function selectedAddresses(): CellAddress[] {
@@ -261,353 +279,855 @@ export default function SpreadsheetTab() {
     return addresses;
   }
 
-  function commitEdit(moveDir: "right" | "down" | null) {
+  // ----------------------------------------------------------------- history
+
+  // Records one undo-able action. `content` must be true exactly when the
+  // engine took one undo step for it (see history.ts).
+  function record(change: { content: boolean; format?: FormatChange }, keepCopied = false) {
+    const format = change.format && Object.keys(change.format.after).length > 0 ? change.format : undefined;
+    if (!change.content && !format) return;
+    setHistory((prev) => pushHistory(prev, { content: change.content, format, selection }));
+    // Like Excel, changing the sheet ends "copy mode": the dashed outline
+    // goes away and a later paste brings in plain values.
+    if (!keepCopied) setCopied(null);
+  }
+
+  function performUndo() {
+    const entry = peekUndo(history);
+    if (!entry) return;
+    if (entry.content) engine.undo();
+    if (entry.format) formatting.restore(entry.format.before);
+    setHistory((prev) => stepHistory(prev, -1));
+    setCopied(null);
+    selectAndReveal(entry.selection);
+  }
+
+  function performRedo() {
+    const entry = peekRedo(history);
+    if (!entry) return;
+    if (entry.content) engine.redo();
+    if (entry.format) formatting.restore(entry.format.after);
+    setHistory((prev) => stepHistory(prev, 1));
+    setCopied(null);
+    selectAndReveal(entry.selection);
+  }
+
+  // ----------------------------------------------------------------- editing
+
+  function startEdit(address: CellAddress, value: string, source: EditingState["source"], mode: EditingState["mode"]) {
+    setSelection(singleCellRange(address));
+    setEditing({ address, value, source, mode, caret: value.length });
+    setRefPick(null);
+    setSuggestIndex(0);
+    setSuggestTouched(false);
+    setSuggestDismissed(false);
+    if (source === "cell") reveal(address);
+  }
+
+  function endEdit() {
+    setEditing(null);
+    setRefPick(null);
+    if (dragMode === "formula-ref") setDragMode(null);
+  }
+
+  function commitEdit(move: "down" | "up" | "right" | "left" | null) {
     if (!editing) return;
-    engine.setCellContent(editing.address, editing.value);
-    pushHistory({ type: "content" });
-    setEditing(null);
-    if (moveDir === "right") moveSelection(0, 1);
-    if (moveDir === "down") moveSelection(1, 0);
-  }
-
-  function cancelEdit() {
-    setEditing(null);
-    if (dragMode === "formula-ref") {
-      setDragMode(null);
-      setFormulaRefDrag(null);
+    // Committing text that's already what the cell holds isn't an edit, and
+    // mustn't leave a do-nothing step in the undo history.
+    if (normalizeCellInput(editing.value) !== engine.raw(editing.address)) {
+      engine.setCell(editing.address, editing.value);
+      record({ content: true });
     }
+    endEdit();
+    if (move) step(move);
   }
 
-  function commitFill(targetBounds: RangeBounds) {
-    const source: CellRange = {
-      anchor: { row: selectionBounds.minRow, col: selectionBounds.minCol },
-      focus: { row: selectionBounds.maxRow, col: selectionBounds.maxCol },
-    };
-    const target: CellRange = {
-      anchor: { row: targetBounds.minRow, col: targetBounds.minCol },
-      focus: { row: targetBounds.maxRow, col: targetBounds.maxCol },
-    };
-    engine.fillRange(source, target);
-    pushHistory({ type: "content" });
-    const filled = unionBounds(selectionBounds, targetBounds);
-    setSelection({
-      anchor: { row: filled.minRow, col: filled.minCol },
-      focus: { row: filled.maxRow, col: filled.maxCol },
+  function setEditText(value: string, caret: number) {
+    setEditing((prev) => (prev ? { ...prev, value, caret } : prev));
+    setPendingCaret(caret);
+  }
+
+  // Typing in either input (the in-cell editor or the formula bar).
+  function handleEditValueChange(value: string, caret: number) {
+    setEditing((prev) => (prev ? { ...prev, value, caret } : prev));
+    setRefPick(null);
+    setSuggestIndex(0);
+    setSuggestTouched(false);
+    setSuggestDismissed(false);
+  }
+
+  function handleEditCaretChange(caret: number) {
+    setEditing((prev) => (prev && prev.caret !== caret ? { ...prev, caret } : prev));
+  }
+
+  // Clicking into the text being edited: from here on the arrow keys move
+  // the caret rather than picking cells.
+  function handleEditorMouseDown() {
+    setRefPick(null);
+    setEditing((prev) => (prev && prev.mode !== "edit" ? { ...prev, mode: "edit" } : prev));
+  }
+
+  // Starting an edit from the formula bar (vs. double-click/typing on the
+  // cell) is what makes the in-cell editor *not* steal DOM focus back.
+  function handleFormulaBarFocus() {
+    if (!editing) startEdit(activeCell, engine.raw(activeCell), "formula-bar", "edit");
+  }
+
+  // Writes a picked reference into the formula, replacing whatever span of
+  // text the pick currently occupies.
+  function applyPick(pick: RefPick) {
+    if (!editing) return;
+    const text = formatRangeReference({ anchor: pick.anchor, focus: pick.focus });
+    const value = replaceSpan(editing.value, pick, text);
+    const end = pick.start + text.length;
+    setEditing({ ...editing, value, caret: end });
+    setRefPick({ ...pick, end });
+    setPendingCaret(end);
+  }
+
+  // Arrow keys while editing a formula ("point mode"): right after an
+  // operator, or while a picked reference is still live, the arrows move a
+  // cell cursor and write its address into the formula. Returns false when
+  // the arrows should do something else.
+  function keyboardPick(deltaRow: number, deltaCol: number, extend: boolean): boolean {
+    if (!editing || !isFormula(editing.value)) return false;
+    let pick = refPick;
+    if (!pick) {
+      if (editing.mode !== "enter") return false;
+      const input = activeInput();
+      const start = input?.selectionStart ?? editing.value.length;
+      const end = input?.selectionEnd ?? start;
+      const span = start === end ? refInsertionSpan(editing.value, start, end) : null;
+      if (!span || span.start !== span.end) return false;
+      pick = { anchor: editing.address, focus: editing.address, ...span };
+    }
+    const focus = clampCell(pick.focus.row + deltaRow, pick.focus.col + deltaCol);
+    applyPick(extend ? { ...pick, focus } : { ...pick, anchor: focus, focus });
+    reveal(focus);
+    return true;
+  }
+
+  // ------------------------------------------------- function autocomplete
+
+  const token = editing && !refPick && !suggestDismissed ? functionTokenAt(editing.value, editing.caret) : null;
+  const suggestions = useMemo(
+    () => (token ? suggestFunctions(token.token, engine.functionNames) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token?.token, engine.functionNames],
+  );
+  const suggestionsKey = suggestions.join(",");
+
+  function acceptSuggestion(name: string) {
+    if (!editing || !token) return;
+    const hasParen = editing.value[editing.caret] === "(";
+    const insert = hasParen ? name : `${name}(`;
+    const value = replaceSpan(editing.value, { start: token.start, end: editing.caret }, insert);
+    setEditText(value, token.start + insert.length + (hasParen ? 1 : 0));
+    setSuggestIndex(0);
+    setSuggestTouched(false);
+  }
+
+  // Anchored under (or, with no room, above) whichever input is in use.
+  useLayoutEffect(() => {
+    if (suggestions.length === 0) {
+      setSuggestPosition(null);
+      return;
+    }
+    const input = editing?.source === "formula-bar" ? barInputRef.current : cellInputRef.current;
+    if (!input) return;
+    const rect = input.getBoundingClientRect();
+    const height = suggestions.length * 24 + 10;
+    const fitsBelow = rect.bottom + 4 + height <= window.innerHeight;
+    setSuggestPosition({
+      left: Math.max(4, Math.min(rect.left, window.innerWidth - 264)),
+      top: fitsBelow ? rect.bottom + 4 : Math.max(4, rect.top - 4 - height),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionsKey, editing?.source, editing?.address.row, editing?.address.col]);
+
+  // --------------------------------------------------- fill / clipboard / clear
+
+  // The formats a block copied from `source` gives `target`, repeating the
+  // source like the content does.
+  function formatsFor(source: RangeBounds, target: RangeBounds, fill = false): FormatSnapshot {
+    // Same alignment as the engine's content (see copyInto): a fill carries
+    // the pattern on from the source, a paste restarts it at the target.
+    const origin = fill ? source : target;
+    const height = source.maxRow - source.minRow + 1;
+    const width = source.maxCol - source.minCol + 1;
+    const changes: FormatSnapshot = {};
+    for (let row = target.minRow; row <= target.maxRow; row++) {
+      for (let col = target.minCol; col <= target.maxCol; col++) {
+        const from = {
+          row: source.minRow + ((((row - origin.minRow) % height) + height) % height),
+          col: source.minCol + ((((col - origin.minCol) % width) + width) % width),
+        };
+        changes[addressKey({ row, col })] = formatting.formats[addressKey(from)];
+      }
+    }
+    return changes;
+  }
+
+  function commitFill(target: RangeBounds) {
+    engine.copyInto(selectionBounds, target, true);
+    const format = formatting.setMany(formatsFor(selectionBounds, target, true));
+    record({ content: true, format });
+    setSelection(toRange(unionBounds(selectionBounds, target)));
+  }
+
+  function clearSelection() {
+    if (selectedAddresses().every((address) => engine.isEmpty(address))) return;
+    engine.clear(selectionBounds);
+    record({ content: true });
+  }
+
+  function selectionAsText(): string {
+    const matrix: string[][] = [];
+    for (let row = selectionBounds.minRow; row <= selectionBounds.maxRow; row++) {
+      const line: string[] = [];
+      for (let col = selectionBounds.minCol; col <= selectionBounds.maxCol; col++) {
+        line.push(view.cells[addressKey({ row, col })]?.text ?? "");
+      }
+      matrix.push(line);
+    }
+    return encodeTsv(matrix);
+  }
+
+  // Copy, cut and paste are driven from the keyboard handler (and the
+  // context menu) through the async clipboard API. The DOM clipboard events
+  // are handled as well, for anything that raises them instead — the Edit
+  // menu's roles in Electron, a browser's own menu.
+  function copySelection(cut: boolean): string {
+    const text = selectionAsText();
+    setCopied({ bounds: selectionBounds, cut, text: normalizeNewlines(text) });
+    return text;
+  }
+
+  function copyToClipboard(cut: boolean) {
+    const text = copySelection(cut);
+    navigator.clipboard?.writeText(text).catch(() => {
+      // Still copied within the sheet; it just didn't reach other apps.
     });
   }
+
+  function pasteFromClipboard() {
+    const fallback = copied?.text ?? null;
+    const read = navigator.clipboard?.readText ? navigator.clipboard.readText() : Promise.reject(new Error("unavailable"));
+    read
+      .then((text) => pasteTextRef.current(text))
+      .catch(() => {
+        // Clipboard access refused: a range copied in this sheet can still
+        // be pasted.
+        if (fallback !== null) pasteTextRef.current(fallback);
+      });
+  }
+
+  const fromTextField = (e: ClipboardEvent) =>
+    editing !== null || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
+
+  function handleCopy(e: ClipboardEvent, cut: boolean) {
+    if (fromTextField(e)) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", copySelection(cut));
+  }
+
+  function handlePaste(e: ClipboardEvent) {
+    if (fromTextField(e)) return;
+    e.preventDefault();
+    pasteText(e.clipboardData.getData("text/plain"));
+  }
+
+  function pasteText(text: string) {
+    const topLeft = { row: selectionBounds.minRow, col: selectionBounds.minCol };
+
+    if (copied && normalizeNewlines(text) === copied.text) {
+      const source = copied.bounds;
+      const height = source.maxRow - source.minRow + 1;
+      const width = source.maxCol - source.minCol + 1;
+
+      if (copied.cut) {
+        const target: RangeBounds = {
+          minRow: topLeft.row,
+          maxRow: topLeft.row + height - 1,
+          minCol: topLeft.col,
+          maxCol: topLeft.col + width - 1,
+        };
+        if (!engine.move(source, topLeft)) {
+          showToast("Doesn't fit there");
+          return;
+        }
+        // Formats move with the cells: clear the source, then set the target
+        // (in that order, so an overlapping move keeps the right ones).
+        const changes: FormatSnapshot = {};
+        for (let row = source.minRow; row <= source.maxRow; row++) {
+          for (let col = source.minCol; col <= source.maxCol; col++) changes[addressKey({ row, col })] = undefined;
+        }
+        Object.assign(changes, formatsFor(source, target));
+        record({ content: true, format: formatting.setMany(changes) });
+        setSelection(toRange(target));
+        return;
+      }
+
+      // One copied cell (or block) pasted over a larger selection that it
+      // divides evenly fills the whole selection.
+      const selHeight = selectionBounds.maxRow - selectionBounds.minRow + 1;
+      const selWidth = selectionBounds.maxCol - selectionBounds.minCol + 1;
+      const tiles = selHeight % height === 0 && selWidth % width === 0;
+      const target: RangeBounds = {
+        minRow: topLeft.row,
+        maxRow: Math.min(rows - 1, topLeft.row + (tiles ? selHeight : height) - 1),
+        minCol: topLeft.col,
+        maxCol: Math.min(cols - 1, topLeft.col + (tiles ? selWidth : width) - 1),
+      };
+      engine.copyInto(source, target);
+      record({ content: true, format: formatting.setMany(formatsFor(source, target)) }, true);
+      setSelection(toRange(target));
+      return;
+    }
+
+    // Text from anywhere else (another app, the calculator tab, or this
+    // sheet after it changed): tab-separated values, pasted as typed input.
+    let values = parseTsv(text);
+    if (values.length === 0) return;
+    const isSingle = values.length === 1 && values[0].length === 1;
+    if (isSingle && (selectionBounds.maxRow > selectionBounds.minRow || selectionBounds.maxCol > selectionBounds.minCol)) {
+      values = Array.from({ length: selectionBounds.maxRow - selectionBounds.minRow + 1 }, () =>
+        Array.from({ length: selectionBounds.maxCol - selectionBounds.minCol + 1 }, () => values[0][0]),
+      );
+    }
+    const written = engine.setMatrix(topLeft, values);
+    if (!written) return;
+    record({ content: true });
+    setSelection(toRange(written));
+  }
+
+  const pasteTextRef = useRef(pasteText);
+  pasteTextRef.current = pasteText;
+
+  // Commands from the grid's native context menu (Electron) come back over
+  // IPC. A ref, so the one subscription always runs the current handlers.
+  const menuCommandRef = useRef<(command: string) => void>(() => {});
+  menuCommandRef.current = (command) => {
+    if (editing) return;
+    if (command === "copy") copyToClipboard(false);
+    else if (command === "cut") copyToClipboard(true);
+    else if (command === "paste") pasteFromClipboard();
+    else if (command === "clear") clearSelection();
+  };
+  useEffect(() => {
+    if (!active) return;
+    return window.electronAPI?.onMenuCommand?.((command) => menuCommandRef.current(command));
+  }, [active]);
+
+  // -------------------------------------------------------------- formatting
 
   function applyToggle(property: "bold" | "italic") {
     const addresses = selectedAddresses();
     const allSet = addresses.every((address) => formatting.getFormat(address)[property] === true);
-    const { before, after } = formatting.applyFormat(addresses, (current) => ({
+    const format = formatting.applyFormat(addresses, (current) => ({
       ...current,
       [property]: allSet ? undefined : true,
     }));
-    pushHistory({ type: "format", before, after });
+    record({ content: false, format }, true);
   }
 
   function handleSetFill(color: string) {
     const addresses = selectedAddresses();
     const allSameFill = addresses.every((address) => formatting.getFormat(address).fill === color);
-    const { before, after } = formatting.applyFormat(addresses, (current) => ({
+    const format = formatting.applyFormat(addresses, (current) => ({
       ...current,
       fill: allSameFill ? undefined : color,
     }));
-    pushHistory({ type: "format", before, after });
+    record({ content: false, format }, true);
   }
 
-  function handleSetNumberFormat(format: NumberFormat | "general") {
-    const addresses = selectedAddresses();
-    const { before, after } = formatting.applyFormat(addresses, (current) => ({
+  function handleSetNumberFormat(numberFormat: NumberFormat | "general") {
+    const format = formatting.applyFormat(selectedAddresses(), (current) => ({
       ...current,
-      numberFormat: format === "general" ? undefined : format,
+      numberFormat: numberFormat === "general" ? undefined : numberFormat,
       // Switching format starts from that format's default precision.
       decimals: undefined,
     }));
-    pushHistory({ type: "format", before, after });
+    record({ content: false, format }, true);
+    containerRef.current?.focus({ preventScroll: true });
   }
 
   // Excel-style: "more decimals" on a General cell turns it into a plain
-  // Number first, so the button always does something visible.
+  // Number first (or keeps it the currency/percentage it was typed as), so
+  // the button always does something visible.
   function handleChangeDecimals(delta: 1 | -1) {
-    const addresses = selectedAddresses();
-    const { before, after } = formatting.applyFormat(addresses, (current) => {
-      const numberFormat = current.numberFormat ?? "number";
+    const format = formatting.applyFormat(selectedAddresses(), (current, address) => {
+      const numberFormat =
+        current.numberFormat ?? autoToNumberFormat(view.cells[addressKey(address)]?.auto ?? null) ?? "number";
       const base = current.decimals ?? defaultDecimals(numberFormat);
       return { ...current, numberFormat, decimals: clamp(base + delta, 0, MAX_DECIMALS) };
     });
-    pushHistory({ type: "format", before, after });
+    record({ content: false, format }, true);
   }
 
   // Double-click on a column's resize edge: size it to its widest content
   // (measured in the grid's own font), within the min/max width limits.
   function handleColumnAutoFit(col: number) {
-    const grid = containerRef.current?.querySelector(".grid");
-    if (!grid) return;
-    const style = getComputedStyle(grid);
+    const grid = gridRef.current;
     const context = document.createElement("canvas").getContext("2d");
-    if (!context) return;
-    context.font = `${style.fontSize} ${style.fontFamily}`;
+    if (!grid || !context) return;
+    const style = getComputedStyle(grid);
     let widest = 0;
-    for (let row = 0; row < rows; row++) {
-      const text = displayValues[addressKey({ row, col })];
-      if (text) widest = Math.max(widest, context.measureText(text).width);
+    for (const cell of Object.values(view.cells)) {
+      if (cell.col !== col) continue;
+      const cellFormat = formatting.formats[addressKey(cell)];
+      context.font = `${cellFormat?.bold ? "600 " : ""}${style.fontSize} ${style.fontFamily}`;
+      widest = Math.max(widest, context.measureText(cell.text).width);
     }
     // An empty column has nothing to fit to: reset it to the default width
     // (like Excel) rather than collapsing it to the minimum.
-    if (widest === 0) {
-      columnWidths.setWidth(col, CELL_WIDTH);
+    columnWidths.setWidth(col, widest === 0 ? CELL_WIDTH : clampWidth(widest + 14));
+  }
+
+  // -------------------------------------------------------------------- mouse
+
+  // Which part of the grid a point is over. Headers are sticky, so they're
+  // found relative to the scroll container; the cell from the grid itself.
+  function hitTest(clientX: number, clientY: number) {
+    const container = containerRef.current;
+    const grid = gridRef.current;
+    if (!container || !grid) return null;
+    const containerRect = container.getBoundingClientRect();
+    const gridRect = grid.getBoundingClientRect();
+    const overColHeader = clientY - containerRect.top < COL_HEADER_HEIGHT;
+    const overRowHeader = clientX - containerRect.left < ROW_HEADER_WIDTH;
+    return {
+      zone: overColHeader && overRowHeader ? "corner" : overColHeader ? "col" : overRowHeader ? "row" : "cell",
+      address: { row: rowAt(clientY - gridRect.top, rows), col: colAt(clientX - gridRect.left, geometry) },
+      // Inside the scrollable area itself, not on a (classic) scrollbar.
+      inside:
+        clientX < containerRect.left + container.clientWidth && clientY < containerRect.top + container.clientHeight,
+    } as const;
+  }
+
+  function handleGridMouseDown(e: MouseEvent) {
+    if (e.target instanceof HTMLInputElement) return; // the in-cell editor handles its own clicks
+    const hit = hitTest(e.clientX, e.clientY);
+    if (!hit || !hit.inside) return;
+    const { zone, address } = hit;
+
+    // Right-click: keep a selection the click landed inside (so the context
+    // menu acts on it), otherwise select the cell under the cursor.
+    if (e.button === 2) {
+      if (editing) return;
+      const inSelection =
+        address.row >= selectionBounds.minRow &&
+        address.row <= selectionBounds.maxRow &&
+        address.col >= selectionBounds.minCol &&
+        address.col <= selectionBounds.maxCol;
+      if (zone === "cell" && !inSelection) setSelection(singleCellRange(address));
+      containerRef.current?.focus({ preventScroll: true });
       return;
     }
-    // 8px horizontal padding + 1px border + a little room for the fill handle.
-    columnWidths.setWidth(col, clampWidth(widest + 20));
-  }
+    if (e.button !== 0) return;
 
-  // Inserts `address`'s reference into the formula being edited, at the
-  // input's current caret position, and starts tracking a drag so the
-  // reference can grow into a range as the mouse moves.
-  function startFormulaRefPick(address: CellAddress) {
-    if (!editing) return;
-    const caret = editingInputRef.current?.selectionStart ?? editing.value.length;
-    const refText = addressKey(address);
-    const newValue = editing.value.slice(0, caret) + refText + editing.value.slice(caret);
-    const insertEnd = caret + refText.length;
-    setEditing({ ...editing, value: newValue });
-    setFormulaRefDrag({ anchor: address, focus: address, insertStart: caret, insertEnd });
-    setDragMode("formula-ref");
-    setPendingCaret(insertEnd);
-  }
-
-  function handleCellMouseDown(address: CellAddress, e: MouseEvent) {
     if (editing) {
-      const isSameCell = editing.address.row === address.row && editing.address.col === address.col;
-      if (isSameCell) return; // clicking inside the input being edited — let it handle the click
-      if (isFormula(editing.value)) {
-        e.preventDefault();
-        startFormulaRefPick(address);
-        return;
+      if (zone === "cell" && sameCell(editing.address, address) && editing.source === "cell") return;
+      if (zone === "cell" && isFormula(editing.value)) {
+        // Shift+click stretches the reference just picked into a range.
+        if (e.shiftKey && refPick) {
+          e.preventDefault();
+          applyPick({ ...refPick, focus: address });
+          return;
+        }
+        const input = activeInput();
+        const start = input?.selectionStart ?? editing.value.length;
+        const span = refInsertionSpan(editing.value, start, input?.selectionEnd ?? start);
+        if (span) {
+          e.preventDefault(); // keep focus (and the caret) in the input
+          applyPick({ anchor: address, focus: address, ...span });
+          setDragMode("formula-ref");
+          return;
+        }
       }
       commitEdit(null);
     }
-    setSelection({ anchor: address, focus: address });
-    setDragMode("select");
-    setCopiedRange(null);
-    containerRef.current?.focus();
-  }
 
-  function handleCellMouseEnter(address: CellAddress) {
-    if (dragMode === "select") {
-      setSelection((prev) => ({ ...prev, focus: address }));
-    } else if (dragMode === "fill") {
-      setFillTarget(computeFillTarget(selectionBounds, address, rows, cols));
-    } else if (dragMode === "formula-ref" && formulaRefDrag && editing) {
-      const refText = formatRangeReference({ anchor: formulaRefDrag.anchor, focus: address });
-      const newValue =
-        editing.value.slice(0, formulaRefDrag.insertStart) +
-        refText +
-        editing.value.slice(formulaRefDrag.insertEnd);
-      const insertEnd = formulaRefDrag.insertStart + refText.length;
-      setEditing({ ...editing, value: newValue });
-      setFormulaRefDrag({ ...formulaRefDrag, focus: address, insertEnd });
-      setPendingCaret(insertEnd);
+    tabOriginRef.current = null;
+    containerRef.current?.focus({ preventScroll: true });
+    e.preventDefault();
+
+    if (zone === "corner") {
+      setSelection({ anchor: { row: 0, col: 0 }, focus: { row: rows - 1, col: cols - 1 } });
+    } else if (zone === "col") {
+      const anchorCol = e.shiftKey ? selection.anchor.col : address.col;
+      setSelection({ anchor: { row: 0, col: anchorCol }, focus: { row: rows - 1, col: address.col } });
+      setDragMode("cols");
+    } else if (zone === "row") {
+      const anchorRow = e.shiftKey ? selection.anchor.row : address.row;
+      setSelection({ anchor: { row: anchorRow, col: 0 }, focus: { row: address.row, col: cols - 1 } });
+      setDragMode("rows");
+    } else {
+      setSelection(e.shiftKey ? { anchor: selection.anchor, focus: address } : singleCellRange(address));
+      setDragMode("select");
     }
   }
 
+  function handleGridDoubleClick(e: MouseEvent) {
+    if (e.target instanceof HTMLInputElement) return;
+    const hit = hitTest(e.clientX, e.clientY);
+    if (!hit || !hit.inside || hit.zone !== "cell" || editing) return;
+    startEdit(hit.address, engine.raw(hit.address), "cell", "edit");
+  }
+
   function handleFillHandleMouseDown(e: MouseEvent) {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     setDragMode("fill");
     setFillTarget(null);
   }
 
-  function handleDoubleClick(address: CellAddress) {
-    if (editing && editing.address.row === address.row && editing.address.col === address.col) {
+  function handleContextMenu(e: MouseEvent) {
+    if (e.target instanceof HTMLInputElement) return; // text fields get the standard edit menu
+    e.preventDefault();
+    window.electronAPI?.showGridMenu?.();
+  }
+
+  // What a drag does as the pointer moves. Kept in a ref so the window-level
+  // listeners below always call the version that sees current state.
+  function dragTo(clientX: number, clientY: number) {
+    const hit = hitTest(clientX, clientY);
+    if (!hit) return;
+    const { address } = hit;
+    if (dragMode === "select") {
+      setSelection((prev) => (sameCell(prev.focus, address) ? prev : { ...prev, focus: address }));
+    } else if (dragMode === "cols") {
+      setSelection((prev) => (prev.focus.col === address.col ? prev : { ...prev, focus: { row: rows - 1, col: address.col } }));
+    } else if (dragMode === "rows") {
+      setSelection((prev) => (prev.focus.row === address.row ? prev : { ...prev, focus: { row: address.row, col: cols - 1 } }));
+    } else if (dragMode === "fill") {
+      setFillTarget(computeFillTarget(selectionBounds, address, rows, cols));
+    } else if (dragMode === "formula-ref" && refPick && !sameCell(refPick.focus, address)) {
+      applyPick({ ...refPick, focus: address });
+    }
+  }
+
+  function finishDrag() {
+    if (dragMode === "fill" && fillTarget !== null) commitFill(fillTarget);
+    setDragMode(null);
+    setFillTarget(null);
+  }
+
+  const dragToRef = useRef(dragTo);
+  dragToRef.current = dragTo;
+  const finishDragRef = useRef(finishDrag);
+  finishDragRef.current = finishDrag;
+
+  // A drag is tracked on the window (it can leave the grid, or end outside
+  // it), and scrolls the grid when held past an edge.
+  useEffect(() => {
+    if (!dragMode) return;
+    let pointer: { x: number; y: number } | null = null;
+
+    function handleMove(e: globalThis.MouseEvent) {
+      pointer = { x: e.clientX, y: e.clientY };
+      dragToRef.current(pointer.x, pointer.y);
+    }
+    function handleUp() {
+      finishDragRef.current();
+    }
+    const scrollTimer = window.setInterval(() => {
+      const container = containerRef.current;
+      if (!pointer || !container) return;
+      const rect = container.getBoundingClientRect();
+      let dx = 0;
+      let dy = 0;
+      if (dragMode !== "rows") {
+        if (pointer.x > rect.right - 6) dx = AUTOSCROLL_STEP;
+        else if (pointer.x < rect.left + ROW_HEADER_WIDTH) dx = -AUTOSCROLL_STEP;
+      }
+      if (dragMode !== "cols") {
+        if (pointer.y > rect.bottom - 6) dy = AUTOSCROLL_STEP;
+        else if (pointer.y < rect.top + COL_HEADER_HEIGHT) dy = -AUTOSCROLL_STEP;
+      }
+      if (dx === 0 && dy === 0) return;
+      const before = { left: container.scrollLeft, top: container.scrollTop };
+      container.scrollLeft += dx;
+      container.scrollTop += dy;
+      if (container.scrollLeft !== before.left || container.scrollTop !== before.top) {
+        dragToRef.current(pointer.x, pointer.y);
+      }
+    }, AUTOSCROLL_INTERVAL_MS);
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.clearInterval(scrollTimer);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [dragMode]);
+
+  // ----------------------------------------------------------------- keyboard
+
+  const ARROWS: Record<string, [number, number]> = {
+    ArrowUp: [-1, 0],
+    ArrowDown: [1, 0],
+    ArrowLeft: [0, -1],
+    ArrowRight: [0, 1],
+  };
+
+  function handleEditingKeyDown(e: KeyboardEvent<HTMLElement>) {
+    if (!editing) return;
+    const listOpen = suggestions.length > 0;
+    const mod = e.metaKey || e.ctrlKey;
+
+    switch (e.key) {
+      case "Enter":
+        e.preventDefault();
+        if (listOpen && suggestTouched) acceptSuggestion(suggestions[suggestIndex]);
+        else commitEdit(mod ? null : e.shiftKey ? "up" : "down");
+        return;
+      case "Tab":
+        e.preventDefault();
+        if (listOpen) acceptSuggestion(suggestions[suggestIndex]);
+        else commitEdit(e.shiftKey ? "left" : "right");
+        return;
+      case "Escape":
+        e.preventDefault();
+        // Specific enough that Escape shouldn't also fall through to
+        // App.tsx's window-hide fallback.
+        e.stopPropagation();
+        if (listOpen) setSuggestDismissed(true);
+        else endEdit();
+        return;
+      case "F2":
+        e.preventDefault();
+        setRefPick(null);
+        setEditing({ ...editing, mode: editing.mode === "enter" ? "edit" : "enter" });
+        return;
+      case "F4": {
+        e.preventDefault();
+        const input = activeInput();
+        const cycled = cycleAbsolute(editing.value, input?.selectionStart ?? editing.caret);
+        if (cycled) {
+          setRefPick(null);
+          setEditText(cycled.value, cycled.caret);
+        }
+        return;
+      }
+    }
+
+    const arrow = ARROWS[e.key];
+    if (!arrow || mod || e.altKey) return;
+    if (listOpen && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      const count = suggestions.length;
+      setSuggestIndex((index) => (index + (e.key === "ArrowDown" ? 1 : count - 1)) % count);
+      setSuggestTouched(true);
       return;
     }
-    setSelection({ anchor: address, focus: address });
-    setEditing({ address, value: engine.getRawInput(address), source: "cell" });
-  }
-
-  function handleEditValueChange(value: string) {
-    setEditing((prev) => (prev ? { ...prev, value } : prev));
-  }
-
-  // Starting an edit from the formula bar (vs. double-click/typing on the
-  // cell) is what makes Cell.tsx *not* steal DOM focus back to the grid —
-  // see EditingState's `source`.
-  function handleFormulaBarFocus() {
-    if (!editing) {
-      setEditing({ address: activeCell, value: engine.getRawInput(activeCell), source: "formula-bar" });
+    if (keyboardPick(arrow[0], arrow[1], e.shiftKey)) {
+      e.preventDefault();
+      return;
     }
-  }
-
-  function handleFormulaBarChange(value: string) {
-    setEditing((prev) =>
-      prev ? { ...prev, value } : { address: activeCell, value, source: "formula-bar" },
-    );
+    // Typed straight over a cell (not F2/double-click): arrows finish the
+    // entry and move on, which is what makes filling in a table quick.
+    if (editing.mode === "enter" && !e.shiftKey) {
+      e.preventDefault();
+      const direction = ({ ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" } as const)[
+        e.key as "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+      ];
+      commitEdit(null);
+      tabOriginRef.current = null;
+      const from = editing.address;
+      selectAndReveal(
+        singleCellRange(
+          clampCell(
+            from.row + (direction === "down" ? 1 : direction === "up" ? -1 : 0),
+            from.col + (direction === "right" ? 1 : direction === "left" ? -1 : 0),
+          ),
+        ),
+      );
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLElement>) {
     if (editing) {
-      switch (e.key) {
-        case "Enter":
+      handleEditingKeyDown(e);
+      return;
+    }
+    // Keys pressed in the toolbar's own controls belong to those controls.
+    if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLButtonElement) return;
+
+    const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+    if (mod && !e.altKey) {
+      switch (key) {
+        case "c":
           e.preventDefault();
-          commitEdit("down");
-          break;
-        case "Tab":
+          copyToClipboard(false);
+          return;
+        case "x":
           e.preventDefault();
-          commitEdit("right");
-          break;
-        case "Escape":
+          copyToClipboard(true);
+          return;
+        case "v":
           e.preventDefault();
-          // Canceling an edit is specific enough that Escape shouldn't
-          // also fall through to App.tsx's window-hide fallback.
-          e.stopPropagation();
-          cancelEdit();
-          break;
+          pasteFromClipboard();
+          return;
+        case "z":
+          e.preventDefault();
+          if (e.shiftKey) performRedo();
+          else performUndo();
+          return;
+        case "y":
+          e.preventDefault();
+          performRedo();
+          return;
+        case "b":
+          e.preventDefault();
+          applyToggle("bold");
+          return;
+        case "i":
+          e.preventDefault();
+          applyToggle("italic");
+          return;
+        case "a":
+          e.preventDefault();
+          setSelection({ anchor: { row: 0, col: 0 }, focus: { row: rows - 1, col: cols - 1 } });
+          return;
+        case "Home":
+          e.preventDefault();
+          selectAndReveal(e.shiftKey ? { anchor: selection.anchor, focus: { row: 0, col: 0 } } : singleCellRange({ row: 0, col: 0 }));
+          return;
+        case "End": {
+          e.preventDefault();
+          const last = lastUsedCell(engine.isEmpty, rows, cols);
+          selectAndReveal(e.shiftKey ? { anchor: selection.anchor, focus: last } : singleCellRange(last));
+          return;
+        }
+      }
+    }
+
+    const arrow = ARROWS[e.key];
+    if (arrow && !e.altKey) {
+      e.preventDefault();
+      navigate(arrow[0], arrow[1], e.shiftKey, mod);
+      return;
+    }
+    if (mod || e.altKey) {
+      // Ctrl+Space selects the column (Shift+Space, below, the row).
+      if (e.ctrlKey && e.key === " ") {
+        e.preventDefault();
+        setSelection({ anchor: { row: 0, col: selectionBounds.minCol }, focus: { row: rows - 1, col: selectionBounds.maxCol } });
       }
       return;
     }
 
-    if ((e.metaKey || e.ctrlKey) && !e.altKey) {
-      if (e.key === "c" || e.key === "C") {
-        e.preventDefault();
-        engine.copyRange(selection);
-        setCopiedRange(selection);
-        return;
-      }
-      if (e.key === "v" || e.key === "V") {
-        e.preventDefault();
-        engine.pasteAt({ row: selectionBounds.minRow, col: selectionBounds.minCol });
-        pushHistory({ type: "content" });
-        return;
-      }
-      if (e.key === "z" || e.key === "Z") {
-        e.preventDefault();
-        if (e.shiftKey) performRedo();
-        else performUndo();
-        return;
-      }
-      if (e.key === "y" || e.key === "Y") {
-        e.preventDefault();
-        performRedo();
-        return;
-      }
-      if (e.key === "b" || e.key === "B") {
-        e.preventDefault();
-        applyToggle("bold");
-        return;
-      }
-      if (e.key === "i" || e.key === "I") {
-        e.preventDefault();
-        applyToggle("italic");
-        return;
-      }
-      if (e.key === "a" || e.key === "A") {
-        // Without this, Cmd/Ctrl+A falls through to the browser's own
-        // "select all text on the page" instead of selecting the grid's
-        // cells — there was no handler for "a" here at all before.
-        e.preventDefault();
-        setSelection({
-          anchor: { row: 0, col: 0 },
-          focus: { row: rows - 1, col: cols - 1 },
-        });
-        return;
-      }
-    }
+    const from = e.shiftKey ? selection.focus : selection.anchor;
+    const moveTo = (target: CellAddress) =>
+      selectAndReveal(e.shiftKey ? { anchor: selection.anchor, focus: target } : singleCellRange(target));
+    const pageRows = Math.max(1, Math.floor(((containerRef.current?.clientHeight ?? 0) - COL_HEADER_HEIGHT) / CELL_HEIGHT) - 1);
 
     switch (e.key) {
-      case "ArrowUp":
+      case "Enter":
         e.preventDefault();
-        moveSelection(-1, 0);
-        break;
-      case "ArrowDown":
+        step(e.shiftKey ? "up" : "down");
+        return;
+      case "Tab":
         e.preventDefault();
-        moveSelection(1, 0);
-        break;
-      case "ArrowLeft":
+        step(e.shiftKey ? "left" : "right");
+        return;
+      case "Home":
         e.preventDefault();
-        moveSelection(0, -1);
-        break;
-      case "ArrowRight":
+        moveTo({ row: from.row, col: 0 });
+        return;
+      case "End":
         e.preventDefault();
-        moveSelection(0, 1);
-        break;
+        moveTo({ row: from.row, col: lastUsedCell((a) => a.row !== from.row || engine.isEmpty(a), rows, cols).col });
+        return;
+      case "PageDown":
+        e.preventDefault();
+        moveTo(clampCell(from.row + pageRows, from.col));
+        return;
+      case "PageUp":
+        e.preventDefault();
+        moveTo(clampCell(from.row - pageRows, from.col));
+        return;
+      case "F2":
+        e.preventDefault();
+        startEdit(activeCell, engine.raw(activeCell), "cell", "edit");
+        return;
       case "Backspace":
+      case "Delete":
         e.preventDefault();
-        engine.clearRange(selection);
-        pushHistory({ type: "content" });
-        break;
+        clearSelection();
+        return;
       case "Escape":
-        if (copiedRange) {
-          // Only stop propagation when there was actually a copy
-          // highlight to clear — with nothing more specific to do,
-          // Escape should still fall through to App.tsx's window-hide
-          // fallback.
+        if (copied) {
+          // Only stop propagation when there was actually a copy highlight
+          // to clear — with nothing more specific to do, Escape should
+          // still fall through to App.tsx's window-hide fallback.
           e.stopPropagation();
-          engine.clearClipboard();
-          setCopiedRange(null);
+          setCopied(null);
+        }
+        return;
+      case " ":
+        if (e.shiftKey) {
+          e.preventDefault();
+          setSelection({ anchor: { row: selectionBounds.minRow, col: 0 }, focus: { row: selectionBounds.maxRow, col: cols - 1 } });
+          return;
         }
         break;
-      default:
-        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          e.preventDefault();
-          setSelection({ anchor: activeCell, focus: activeCell });
-          setEditing({ address: activeCell, value: e.key, source: "cell" });
-        }
+    }
+
+    // Any printable key starts typing over the active cell. (isComposing:
+    // leave IME / dead-key composition to finish first.)
+    if (e.key.length === 1 && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      startEdit(activeCell, e.key, "cell", "enter");
     }
   }
 
-  // Computed display values for every visible cell. Cheap enough to
-  // recompute on every render given the grid is capped at 7 x 25.
-  const displayValues: Record<string, string> = {};
-  const numericKeys = new Set<string>();
-  const numericValues: Record<string, number> = {};
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const address = { row, col };
-      const key = addressKey(address);
-      const number = engine.getNumber(address);
-      if (number === null) {
-        displayValues[key] = engine.getDisplayValue(address);
-        continue;
-      }
-      numericKeys.add(key);
-      numericValues[key] = number;
-      const format = formatting.getFormat(address);
-      displayValues[key] = format.numberFormat
-        ? formatNumberValue(number, format.numberFormat, format.decimals)
-        : engine.getDisplayValue(address);
-    }
-  }
+  // ------------------------------------------------------------------- render
 
   // Status-bar stats over the numbers in the selection (only shown for a
   // multi-cell selection — a single cell already shows its own value).
-  const selectedNumbers: number[] = [];
-  const multiCellSelection =
-    selectionBounds.maxRow > selectionBounds.minRow || selectionBounds.maxCol > selectionBounds.minCol;
-  if (multiCellSelection) {
+  const summary = useMemo(() => {
+    const isMulti = selectionBounds.maxRow > selectionBounds.minRow || selectionBounds.maxCol > selectionBounds.minCol;
+    if (!isMulti) return null;
+    const numbers: number[] = [];
     for (let row = selectionBounds.minRow; row <= selectionBounds.maxRow; row++) {
       for (let col = selectionBounds.minCol; col <= selectionBounds.maxCol; col++) {
-        const value = numericValues[addressKey({ row, col })];
-        if (value !== undefined) selectedNumbers.push(value);
+        const value = view.numbers[addressKey({ row, col })];
+        if (value !== undefined) numbers.push(value);
       }
     }
-  }
-  const summary = summarize(selectedNumbers);
+    return summarize(numbers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, selectionBounds.minRow, selectionBounds.maxRow, selectionBounds.minCol, selectionBounds.maxCol]);
 
-  const fillPreviewBounds: RangeBounds | null = dragMode === "fill" ? fillTarget : null;
-  const copiedBounds = copiedRange ? normalizeRange(copiedRange) : null;
   // Outlined for as long as a formula is being edited — including after the
   // drag that picked a reference ends — not just while dragging.
-  const formulaRefs = editing ? parseFormulaRefs(editing.value, rows, cols) : [];
+  const editValue = editing?.value;
+  const formulaRefs = useMemo(
+    () => (editValue !== undefined ? parseFormulaRefs(editValue, rows, cols) : []),
+    [editValue],
+  );
+  const copiedOverlay = useMemo(() => (copied ? { bounds: copied.bounds, cut: copied.cut } : null), [copied]);
 
-  const activeCellKey = addressKey(activeCell);
-  const formulaBarValue = editing ? editing.value : engine.getRawInput(activeCell);
+  const formulaBarValue = editing ? editing.value : engine.raw(activeCell);
   const activeFormat: CellFormat = formatting.getFormat(activeCell);
+  const selectionLabel =
+    dragMode === "select" || dragMode === "cols" || dragMode === "rows"
+      ? `${selectionBounds.maxRow - selectionBounds.minRow + 1}R × ${selectionBounds.maxCol - selectionBounds.minCol + 1}C`
+      : addressKey(activeCell);
 
   return (
-    <div className="spreadsheet-tab">
+    <div
+      className="spreadsheet-tab"
+      onCopy={(e) => handleCopy(e, false)}
+      onCut={(e) => handleCopy(e, true)}
+      onPaste={handlePaste}
+    >
       <Toolbar
         activeFormat={activeFormat}
         onToggleBold={() => applyToggle("bold")}
@@ -617,45 +1137,54 @@ export default function SpreadsheetTab() {
         onChangeDecimals={handleChangeDecimals}
       />
       <FormulaBar
-        addressLabel={activeCellKey}
+        inputRef={barInputRef}
+        addressLabel={selectionLabel}
         value={formulaBarValue}
-        onChange={handleFormulaBarChange}
+        isEditing={editing !== null}
+        onChange={handleEditValueChange}
+        onCaretChange={handleEditCaretChange}
         onFocus={handleFormulaBarFocus}
+        onMouseDown={handleEditorMouseDown}
         onKeyDown={handleKeyDown}
       />
       <div
         ref={containerRef}
-        className="grid-area"
+        className={dragMode === "fill" ? "grid-area is-filling" : "grid-area"}
         tabIndex={0}
         onKeyDown={handleKeyDown}
+        onMouseDown={handleGridMouseDown}
+        onDoubleClick={handleGridDoubleClick}
+        onContextMenu={handleContextMenu}
       >
         <Grid
           rows={rows}
           cols={cols}
+          gridRef={gridRef}
+          geometry={geometry}
+          cells={view.cells}
+          formats={formatting.formats}
           activeCell={activeCell}
           selectionBounds={selectionBounds}
-          fillPreviewBounds={fillPreviewBounds}
-          copiedBounds={copiedBounds}
+          fillPreviewBounds={dragMode === "fill" ? fillTarget : null}
+          copied={copiedOverlay}
           formulaRefs={formulaRefs}
           isDragging={dragMode !== null}
-          displayValues={displayValues}
-          numericKeys={numericKeys}
           getColumnWidth={columnWidths.getWidth}
           onColumnResize={columnWidths.setWidth}
           onColumnAutoFit={handleColumnAutoFit}
-          getFormat={formatting.getFormat}
           editing={editing}
-          editingInputRef={editingInputRef}
-          onCellMouseDown={handleCellMouseDown}
-          onCellMouseEnter={handleCellMouseEnter}
+          editingInputRef={cellInputRef}
           onFillHandleMouseDown={handleFillHandleMouseDown}
-          onDoubleClick={handleDoubleClick}
           onEditValueChange={handleEditValueChange}
+          onEditCaretChange={handleEditCaretChange}
+          onEditorMouseDown={handleEditorMouseDown}
         />
       </div>
-      {summary && (
-        <div className="summary-bar" aria-live="polite">
-          {(
+      {/* Always present (an appearing/disappearing bar would resize the grid
+          every time a selection grows past one cell). */}
+      <div className="status-bar" aria-live="polite">
+        {summary &&
+          (
             [
               ["Sum", summary.sum],
               ["Average", summary.average],
@@ -667,17 +1196,25 @@ export default function SpreadsheetTab() {
             <button
               key={label}
               type="button"
-              className="summary-stat"
+              className="status-stat"
               title={`Click to copy ${label.toLowerCase()}`}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 void navigator.clipboard.writeText(String(value));
                 showToast("Copied");
               }}
             >
-              <span className="summary-label">{label}</span> {formatPlainNumber(value)}
+              <span className="status-label">{label}</span> {formatPlainNumber(value)}
             </button>
           ))}
-        </div>
+      </div>
+      {editing && suggestions.length > 0 && suggestPosition && (
+        <FunctionSuggestions
+          names={suggestions}
+          activeIndex={Math.min(suggestIndex, suggestions.length - 1)}
+          position={suggestPosition}
+          onPick={acceptSuggestion}
+        />
       )}
     </div>
   );

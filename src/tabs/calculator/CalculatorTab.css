@@ -4,13 +4,9 @@
   overflow-y: auto;
   padding: 16px 24px;
   box-sizing: border-box;
-  /* Scrolling stays functional — only the visible track/thumb goes away,
-     same treatment as the spreadsheet grid's .grid-area. */
-  scrollbar-width: none;
-}
-
-.calculator-tab::-webkit-scrollbar {
-  display: none;
+  /* The calculator keeps its monospace, Numi-like look (DESIGN.md); the
+     chrome around it uses the system font. */
+  font-family: var(--font-mono);
 }
 
 /* Plain block wrapper around the divider + rows — natural, content-
@@ -41,7 +37,7 @@
      item's own baseline naturally falls. */
   align-items: flex-end;
   position: relative;
-  border-radius: 4px;
+  border-radius: 5px;
   padding: 5px 4px;
   font-size: 15px;
   line-height: 1.4;
@@ -108,7 +104,7 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--border);
+  background: var(--grid-line);
 }
 
 .calc-divider:hover::after,
@@ -144,7 +140,6 @@
   --result-color: var(--text-result);
   color: var(--result-color);
   white-space: nowrap;
-  cursor: pointer;
 }
 
 /* Hover feedback — a soft tint of the result's own color, so it reads

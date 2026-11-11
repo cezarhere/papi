@@ -8,9 +8,15 @@ import { initCurrencyRates } from "./tabs/calculator/currencyRates";
 // dependency and most sessions only ever use the calculator.
 const SpreadsheetTab = lazy(() => import("./tabs/SpreadsheetTab"));
 import { ToastContext } from "./ToastContext";
+import { useSystemAppearance } from "./useSystemAppearance";
 import "./App.css";
 
 type TabId = "calculator" | "spreadsheet";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "calculator", label: "Calculator" },
+  { id: "spreadsheet", label: "Spreadsheet" },
+];
 
 const TOAST_DURATION_MS = 1600;
 const PRECISION_STORAGE_KEY = "calculator-precision";
@@ -69,44 +75,77 @@ export default function App() {
   // (cancel an edit, clear a copy highlight) calls stopPropagation when
   // it actually does something, so this only fires as a fallback once
   // nothing more specific consumed the keypress first.
-  function handleEscape(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") window.electronAPI?.hideWindow();
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      window.electronAPI?.hideWindow();
+      return;
+    }
+    // Cmd+1 / Cmd+2 switch tabs (also in the app menu, see electron/main).
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "1" || e.key === "2")) {
+      e.preventDefault();
+      setActiveTab(e.key === "1" ? "calculator" : "spreadsheet");
+    }
   }
+
+  // The spreadsheet is loaded on first visit and then stays mounted, hidden,
+  // while the calculator is showing (and vice versa): switching tabs must
+  // not throw away undo history, selection or scroll position.
+  const [spreadsheetVisited, setSpreadsheetVisited] = useState(activeTab === "spreadsheet");
+  useEffect(() => {
+    if (activeTab === "spreadsheet") setSpreadsheetVisited(true);
+  }, [activeTab]);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    return window.electronAPI?.onMenuCommand((command) => {
+      if (command === "settings") setSettingsOpen(true);
+      else if (command === "tab:calculator") setActiveTab("calculator");
+      else if (command === "tab:spreadsheet") setActiveTab("spreadsheet");
+    });
+  }, []);
+
+  useSystemAppearance();
 
   return (
     <ToastContext.Provider value={showToast}>
       <PrecisionContext.Provider value={{ precision, setPrecision }}>
-        <div className="app" onKeyDown={handleEscape}>
-          <div className="tab-bar" role="tablist">
-            <button
-              role="tab"
-              aria-selected={activeTab === "calculator"}
-              className={activeTab === "calculator" ? "tab active" : "tab"}
-              onClick={() => setActiveTab("calculator")}
-            >
-              Calculator
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === "spreadsheet"}
-              className={activeTab === "spreadsheet" ? "tab active" : "tab"}
-              onClick={() => setActiveTab("spreadsheet")}
-            >
-              Spreadsheet
-            </button>
-            <div className="tab-bar-right">
-              {toastMessage && <span className="tab-bar-toast">{toastMessage}</span>}
-              <SettingsPopover />
+        <div className="app" onKeyDown={handleKeyDown}>
+          <div className="title-bar">
+            <div className="segmented" role="tablist">
+              {TABS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={activeTab === id}
+                  className={activeTab === id ? "segment is-selected" : "segment"}
+                  // Don't take focus from the tab's own content on click.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setActiveTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="title-bar-right">
+              {toastMessage && (
+                <span className="toast" role="status">
+                  {toastMessage}
+                </span>
+              )}
+              <SettingsPopover isOpen={settingsOpen} onOpenChange={setSettingsOpen} />
             </div>
           </div>
           <UpdateBanner />
           <div className="tab-content">
-            {activeTab === "calculator" ? (
-              <CalculatorTab />
-            ) : (
-              <Suspense fallback={null}>
-                <SpreadsheetTab />
-              </Suspense>
+            <div className="tab-panel" role="tabpanel" hidden={activeTab !== "calculator"}>
+              <CalculatorTab active={activeTab === "calculator"} />
+            </div>
+            {spreadsheetVisited && (
+              <div className="tab-panel" role="tabpanel" hidden={activeTab !== "spreadsheet"}>
+                <Suspense fallback={null}>
+                  <SpreadsheetTab active={activeTab === "spreadsheet"} />
+                </Suspense>
+              </div>
             )}
           </div>
         </div>

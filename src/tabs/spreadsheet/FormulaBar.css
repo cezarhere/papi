@@ -1,28 +1,43 @@
 .formula-bar {
   display: flex;
   align-items: center;
+  height: 28px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
+  border-bottom: 0.5px solid var(--separator);
+  background: var(--bg-content);
   font-size: 13px;
 }
 
 .formula-bar-address {
-  width: 60px;
+  width: 64px;
   flex-shrink: 0;
-  padding: 6px 8px;
   color: var(--text-secondary);
-  border-right: 1px solid var(--border);
   text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.formula-bar-fx {
+  flex-shrink: 0;
+  padding: 0 8px;
+  border-left: 0.5px solid var(--separator);
+  color: var(--text-tertiary);
+  font-family: "New York", "Times New Roman", serif;
+  font-style: italic;
+  font-size: 13px;
+  line-height: 28px;
 }
 
 .formula-bar-value {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
+  height: 100%;
+  padding: 0 8px 0 0;
   border: none;
   outline: none;
   background: transparent;
   color: var(--text-primary);
-  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }

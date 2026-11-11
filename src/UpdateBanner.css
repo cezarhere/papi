@@ -4,8 +4,8 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--selection-bg);
+  border-bottom: 0.5px solid var(--separator);
+  background: var(--accent-tint);
   color: var(--text-primary);
   font-size: 12px;
 }
@@ -21,24 +21,22 @@
 .update-banner-button {
   height: 22px;
   padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: transparent;
+  border: none;
+  border-radius: 5px;
+  background: var(--control-fill);
   color: var(--text-primary);
-  font: inherit;
-  cursor: pointer;
+  font-size: 12px;
 }
 
 .update-banner-button:hover {
-  background: var(--border);
+  background: var(--control-active);
 }
 
 .update-banner-primary {
-  border-color: var(--text-accent);
-  color: var(--text-accent);
+  background: var(--accent);
+  color: #fff;
 }
 
-.update-banner-button:focus-visible {
-  outline: 2px solid var(--text-accent);
-  outline-offset: 1px;
+.update-banner-primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
 }

@@ -10,7 +10,98 @@ body,
 }
 
 body {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-size: 13px;
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--bg-content);
+  -webkit-font-smoothing: antialiased;
+  /* An app, not a document: chrome text isn't selectable, and nothing
+     rubber-bands the whole window. */
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  cursor: default;
+}
+
+/* The window's vibrancy material is the background; areas that should be
+   opaque (the content) paint their own. */
+:root.is-electron body {
+  background: transparent;
+}
+
+button,
+select,
+input,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  /* macOS never shows a pointing hand over buttons. */
+  cursor: default;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* One focus ring for controls: the soft accent halo macOS draws. Text
+   fields that are part of the content (calculator lines, the formula bar,
+   the cell editor) show a caret instead and style their own focus. */
+button:focus-visible,
+select:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+textarea:focus-visible,
+input:not([type="checkbox"]):focus-visible {
+  outline: none;
+}
+
+/* A switch, as in System Settings, in place of a checkbox. */
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--control-active);
+  transition: background-color 0.15s ease;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  transform: translateX(14px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation: none !important;
+  }
 }

@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { NUMBER_FORMAT_OPTIONS, type NumberFormat } from "./numberFormat";
 import type { CellFormat } from "./types";
 import "./Toolbar.css";
@@ -18,6 +19,11 @@ interface ToolbarProps {
   onChangeDecimals: (delta: 1 | -1) => void;
 }
 
+// Toolbar buttons act on the grid's selection, so they must not take
+// keyboard focus away from it (the arrow keys would stop working until the
+// next click on a cell).
+const keepFocus = (e: MouseEvent) => e.preventDefault();
+
 export default function Toolbar({
   activeFormat,
   onToggleBold,
@@ -28,42 +34,46 @@ export default function Toolbar({
 }: ToolbarProps) {
   return (
     <div className="toolbar">
-      <button
-        type="button"
-        className={
-          activeFormat.bold ? "toolbar-button toolbar-button-active" : "toolbar-button"
-        }
-        onClick={onToggleBold}
-        aria-pressed={activeFormat.bold === true}
-        title="Bold"
-      >
-        <span className="toolbar-icon-bold">B</span>
-      </button>
-      <button
-        type="button"
-        className={
-          activeFormat.italic ? "toolbar-button toolbar-button-active" : "toolbar-button"
-        }
-        onClick={onToggleItalic}
-        aria-pressed={activeFormat.italic === true}
-        title="Italic"
-      >
-        <span className="toolbar-icon-italic">I</span>
-      </button>
-      <div className="toolbar-divider" />
-      {FILL_COLORS.map(({ label, value }) => (
+      <div className="toolbar-group">
         <button
-          key={value}
           type="button"
-          className={
-            activeFormat.fill === value ? "toolbar-swatch toolbar-swatch-active" : "toolbar-swatch"
-          }
-          style={{ backgroundColor: value }}
-          onClick={() => onSetFill(value)}
-          aria-pressed={activeFormat.fill === value}
-          title={`${label} fill`}
-        />
-      ))}
+          className={activeFormat.bold ? "toolbar-button is-on" : "toolbar-button"}
+          onMouseDown={keepFocus}
+          onClick={onToggleBold}
+          aria-pressed={activeFormat.bold === true}
+          aria-label="Bold"
+          title="Bold (⌘B)"
+        >
+          <span className="toolbar-icon-bold">B</span>
+        </button>
+        <button
+          type="button"
+          className={activeFormat.italic ? "toolbar-button is-on" : "toolbar-button"}
+          onMouseDown={keepFocus}
+          onClick={onToggleItalic}
+          aria-pressed={activeFormat.italic === true}
+          aria-label="Italic"
+          title="Italic (⌘I)"
+        >
+          <span className="toolbar-icon-italic">I</span>
+        </button>
+      </div>
+      <div className="toolbar-divider" />
+      <div className="toolbar-group">
+        {FILL_COLORS.map(({ label, value }) => (
+          <button
+            key={value}
+            type="button"
+            className={activeFormat.fill === value ? "toolbar-swatch is-on" : "toolbar-swatch"}
+            style={{ backgroundColor: value }}
+            onMouseDown={keepFocus}
+            onClick={() => onSetFill(value)}
+            aria-pressed={activeFormat.fill === value}
+            aria-label={`${label} fill`}
+            title={`${label} fill`}
+          />
+        ))}
+      </div>
       <div className="toolbar-divider" />
       <select
         className="toolbar-select"
@@ -78,25 +88,28 @@ export default function Toolbar({
           </option>
         ))}
       </select>
-      <div className="toolbar-divider" />
-      <button
-        type="button"
-        className="toolbar-capsule"
-        onClick={() => onChangeDecimals(-1)}
-        title="Fewer decimal places"
-        aria-label="Fewer decimal places"
-      >
-        .0&#8592;
-      </button>
-      <button
-        type="button"
-        className="toolbar-capsule"
-        onClick={() => onChangeDecimals(1)}
-        title="More decimal places"
-        aria-label="More decimal places"
-      >
-        .00&#8594;
-      </button>
+      <div className="toolbar-group toolbar-group-joined">
+        <button
+          type="button"
+          className="toolbar-button toolbar-button-text"
+          onMouseDown={keepFocus}
+          onClick={() => onChangeDecimals(-1)}
+          title="Fewer decimal places"
+          aria-label="Fewer decimal places"
+        >
+          .0
+        </button>
+        <button
+          type="button"
+          className="toolbar-button toolbar-button-text"
+          onMouseDown={keepFocus}
+          onClick={() => onChangeDecimals(1)}
+          title="More decimal places"
+          aria-label="More decimal places"
+        >
+          .00
+        </button>
+      </div>
     </div>
   );
 }

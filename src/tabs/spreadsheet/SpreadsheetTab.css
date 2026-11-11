@@ -1,5 +1,4 @@
 .spreadsheet-tab {
-  box-sizing: border-box;
   height: 100%;
   width: 100%;
   display: flex;
@@ -10,59 +9,107 @@
 .grid-area {
   flex: 1;
   min-height: 0;
-  box-sizing: border-box;
   /* No padding: `position: sticky` offsets are relative to the scroll
-     container's *padding* edge, not its border edge — padding here would
-     leave a gap between the container's true top/left edge and where the
-     sticky headers actually stick, letting scrolled-past content show
-     through uncovered in that gap. */
+     container's *padding* edge — padding here would leave a gap that
+     scrolled-past content shows through, above/left of the sticky headers. */
   overflow: auto;
-  /* Scrolling itself stays functional — this only hides the scrollbar's
-     own visual track/thumb, same idea as Numi's chrome-free look. */
-  scrollbar-width: none;
+  /* The scroller itself never rubber-bands the headers away. */
+  overscroll-behavior: none;
+  background: var(--bg-content);
+  cursor: cell;
 }
 
-.grid-area::-webkit-scrollbar {
-  display: none;
-}
-
-.grid-area:focus {
+.grid-area:focus,
+.grid-area:focus-visible {
   outline: none;
 }
 
-/* Selection summary (Sum / Average / Count / Min / Max) along the bottom,
-   like the status bar in Excel and Sheets. Stats are buttons: click to copy. */
-.summary-bar {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 14px;
-  padding: 4px 10px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-elevated);
-  font-size: 12px;
-  color: var(--text-primary);
+.grid-area.is-filling {
+  cursor: crosshair;
 }
 
-.summary-stat {
-  padding: 1px 4px;
+/* Selection summary (Sum / Average / Count / Min / Max) along the bottom,
+   like the status bar in Excel and Numbers. Stats are buttons: click to copy. */
+.status-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  height: 24px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-top: 0.5px solid var(--separator);
+  background: var(--bg-chrome);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.status-stat {
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 6px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: inherit;
-  font: inherit;
-  cursor: pointer;
+  font-size: inherit;
 }
 
-.summary-stat:hover {
-  background: var(--border);
+.status-stat:hover {
+  background: var(--control-hover);
 }
 
-.summary-stat:focus-visible {
-  outline: 2px solid var(--text-accent);
-  outline-offset: -2px;
+.status-stat:active {
+  background: var(--control-active);
 }
 
-.summary-label {
+.status-label {
   color: var(--text-secondary);
+}
+
+/* Function-name autocomplete under the input being typed in. */
+.suggestions {
+  position: fixed;
+  z-index: 50;
+  width: 260px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  font-size: 12px;
+}
+
+.suggestion {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  line-height: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.suggestion-name {
+  font-weight: 500;
+}
+
+.suggestion-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.suggestion-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.suggestion-active .suggestion-hint {
+  color: rgba(255, 255, 255, 0.75);
 }
