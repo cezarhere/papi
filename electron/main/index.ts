@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   screen,
   shell,
   systemPreferences,
@@ -36,6 +37,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // takes package.json's lowercase "name". The data folder is pinned
 // explicitly below, so this doesn't move any saved data.
 app.setName("PAPI");
+
+// Development only: force an appearance regardless of the system's, e.g.
+// PAPI_THEME=dark, for taking screenshots of both.
+if (!app.isPackaged && (process.env.PAPI_THEME === "dark" || process.env.PAPI_THEME === "light")) {
+  nativeTheme.themeSource = process.env.PAPI_THEME;
+}
 
 const LEGACY_USER_DATA_NAME = "spreadsheet-app";
 const USER_DATA_NAME = "PAPI";
