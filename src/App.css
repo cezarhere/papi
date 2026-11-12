@@ -8,49 +8,61 @@
 /* The window has no native title bar (electron/main/index.ts's
    titleBarStyle: "hiddenInset"), so this row is the title bar: it's the
    window-drag region, the traffic lights float over its left end, and the
-   tab switcher sits centred in it like a macOS toolbar's segmented control. */
+   two tabs follow them. The left padding clears the traffic lights (their
+   explicit trafficLightPosition x:14 plus the cluster's width). */
 .title-bar {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
   height: 40px;
   flex-shrink: 0;
+  padding-left: 88px;
   border-bottom: 0.5px solid var(--separator);
   background: var(--bg-chrome);
   -webkit-app-region: drag;
 }
 
-.segmented {
+.tabs {
   display: flex;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--control-fill);
   /* Buttons need their own opt-out — a drag region otherwise swallows
      their clicks entirely. */
   -webkit-app-region: no-drag;
 }
 
-.segment {
-  min-width: 92px;
-  height: 22px;
-  padding: 0 12px;
+/* Two plain tabs; the current one is marked by an accent underline that
+   sits on the title bar's bottom edge. */
+.tab {
+  position: relative;
+  padding: 0 14px;
   border: none;
-  border-radius: 5px;
   background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  transition: color 0.12s ease;
+}
+
+.tab:hover {
   color: var(--text-primary);
-  font-size: 12px;
+}
+
+.tab.is-selected {
+  color: var(--text-primary);
   font-weight: 500;
-  transition: background-color 0.12s ease;
 }
 
-.segment.is-selected {
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-segment);
+.tab.is-selected::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--accent);
 }
 
-.segment:not(.is-selected):active {
-  background: var(--control-hover);
+.tab:focus-visible {
+  outline-offset: -3px;
 }
 
 .title-bar-right {

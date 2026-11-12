@@ -165,7 +165,9 @@ long text next to empty cells      -> spills across them
 - Type over a cell (arrows then commit and move), or double-click / F2 to
   edit in place (arrows move the caret); Escape cancels
 - Type in the formula bar — stays in sync with the cell live
-- Delete or Backspace clears the selection
+- Delete or Backspace clears the selection's content (formatting stays);
+  Cmd+A then Delete empties the sheet, formatting included, and leaves A1
+  selected — one Cmd+Z brings it all back
 - Formulas: `=su` offers SUM… (Tab accepts, arrows choose); click or drag
   cells to insert a reference at the caret (also from the formula bar);
   clicking another cell right after a reference replaces it; right after

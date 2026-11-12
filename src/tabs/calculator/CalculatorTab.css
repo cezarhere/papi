@@ -132,34 +132,29 @@
   min-width: 0;
   overflow: hidden;
   direction: rtl;
-  /* Constant padding + radius (not just when copied) so clicking to copy
-     never resizes/shifts the row — only the background/text color below
-     actually change. */
-  padding: 2px 8px;
-  border-radius: 10px;
   --result-color: var(--text-result);
-  color: var(--result-color);
   white-space: nowrap;
 }
 
-/* Hover feedback — a soft tint of the result's own color, so it reads
-   as "this is clickable" before you actually click it. Excludes the
-   copied state (:not(...)) since that already sets its own solid
-   background (the result's full color, text inverted) and would
-   otherwise lose to this rule on specificity if the cursor is still
-   over the result right after clicking it. */
-.calc-line-result:hover:not(.calc-line-result-copied) {
-  background: color-mix(in srgb, var(--result-color) 22%, transparent);
-}
-
-/* dir="ltr" alone still lets the browser's bidi algorithm reorder a
-   character or two across the clip edge (digits/punctuation right at
-   the boundary can leak onto the input side) — bidi-override forces
-   strict left-to-right rendering with no reordering at all, which is
-   what actually keeps the clip edge clean. */
+/* The value itself is the pill: hover and "copied" feedback hug the
+   result's own text rather than filling the whole column. Padding and
+   radius are constant (not only when copied) so clicking to copy never
+   shifts the row — only background/text colour change.
+   dir="ltr" alone still lets the browser's bidi algorithm reorder a
+   character or two across the clip edge — bidi-override forces strict
+   left-to-right rendering, which is what keeps the clip edge clean. */
 .calc-line-result-value {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--result-color);
   unicode-bidi: bidi-override;
   direction: ltr;
+}
+
+/* A soft tint of the result's own colour: reads as "this is clickable". */
+.calc-line-result-value:hover {
+  background: color-mix(in srgb, var(--result-color) 22%, transparent);
 }
 
 .calc-line-result-error {
@@ -170,13 +165,12 @@
   --result-color: var(--text-accent);
 }
 
-/* Numi-style copy feedback (Line.tsx, ~700ms after a click): the
-   result's own color becomes the pill fill, text inverts to the app's
-   background — --result-color is a plain custom property (not
-   currentColor), so it isn't affected by the color: override below. */
-.calc-line-result-copied {
+/* Copy feedback (Line.tsx, ~700ms after a click): the result's own colour
+   becomes the pill fill, text inverts to the app's background. */
+.calc-line-result-copied .calc-line-result-value,
+.calc-line-result-copied .calc-line-result-value:hover {
   background: var(--result-color);
-  color: var(--bg-primary);
+  color: var(--bg-content);
 }
 
 .calc-line-input-keyword {

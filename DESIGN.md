@@ -40,6 +40,10 @@ Older names (`--bg-primary`, `--bg-elevated`, `--border`, `--text-accent`,
 - Buttons use the default arrow cursor, never a pointing hand.
 - Focus is a 3px soft accent ring on controls; content text fields show
   only a caret.
+- The two tabs sit in the title bar after the traffic lights as plain
+  text tabs; the current one has an accent underline. (A centred segmented
+  control was tried in v0.1.5 and dropped: stacked on the spreadsheet's
+  toolbar it read as two competing rows of controls.)
 - Booleans in Settings are switches.
 - Motion is short (≤150ms) and switched off under Reduce Motion.
 - Scrollbars are the system's own (overlay or always-on, per System

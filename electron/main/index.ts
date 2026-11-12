@@ -275,6 +275,7 @@ if (!gotLock) {
       { label: "Paste", click: () => sendCommand("paste") },
       { type: "separator" },
       { label: "Clear Contents", click: () => sendCommand("clear") },
+      { label: "Clear Formatting", click: () => sendCommand("clear-format") },
     ]).popup({ window: mainWindow });
   });
 

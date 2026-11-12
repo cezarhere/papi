@@ -299,7 +299,11 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     if (entry.format) formatting.restore(entry.format.before);
     setHistory((prev) => stepHistory(prev, -1));
     setCopied(null);
-    selectAndReveal(entry.selection);
+    // Bring the active cell back into view — not the far corner of a
+    // restored range (undoing a select-all delete must not jump to Z50).
+    tabOriginRef.current = null;
+    setSelection(entry.selection);
+    reveal(entry.selection.anchor);
   }
 
   function performRedo() {
@@ -309,7 +313,11 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     if (entry.format) formatting.restore(entry.format.after);
     setHistory((prev) => stepHistory(prev, 1));
     setCopied(null);
-    selectAndReveal(entry.selection);
+    // Bring the active cell back into view — not the far corner of a
+    // restored range (undoing a select-all delete must not jump to Z50).
+    tabOriginRef.current = null;
+    setSelection(entry.selection);
+    reveal(entry.selection.anchor);
   }
 
   // ----------------------------------------------------------------- editing
@@ -475,10 +483,31 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     setSelection(toRange(unionBounds(selectionBounds, target)));
   }
 
+  // Delete / Backspace. Clears content and keeps formatting, like Excel —
+  // except when the whole sheet is selected: that is "start over", so the
+  // formatting goes too and the selection collapses back to A1.
   function clearSelection() {
-    if (selectedAddresses().every((address) => engine.isEmpty(address))) return;
-    engine.clear(selectionBounds);
-    record({ content: true });
+    const wholeSheet =
+      selectionBounds.minRow === 0 &&
+      selectionBounds.minCol === 0 &&
+      selectionBounds.maxRow === rows - 1 &&
+      selectionBounds.maxCol === cols - 1;
+    const hasContent = !selectedAddresses().every((address) => engine.isEmpty(address));
+    if (hasContent) engine.clear(selectionBounds);
+    let format: FormatChange | undefined;
+    if (wholeSheet) {
+      const cleared: FormatSnapshot = {};
+      for (const key of Object.keys(formatting.formats)) cleared[key] = undefined;
+      format = formatting.setMany(cleared);
+      setSelection(singleCellRange({ row: 0, col: 0 }));
+      reveal({ row: 0, col: 0 });
+    }
+    record({ content: hasContent, format });
+  }
+
+  function clearFormatting() {
+    const format = formatting.applyFormat(selectedAddresses(), () => ({}));
+    record({ content: false, format }, true);
   }
 
   function selectionAsText(): string {
@@ -613,6 +642,7 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     else if (command === "cut") copyToClipboard(true);
     else if (command === "paste") pasteFromClipboard();
     else if (command === "clear") clearSelection();
+    else if (command === "clear-format") clearFormatting();
   };
   useEffect(() => {
     if (!active) return;

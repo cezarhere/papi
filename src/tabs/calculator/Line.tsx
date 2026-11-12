@@ -137,7 +137,7 @@ export default function Line({
         onKeyDown={onKeyDown}
         onMouseDown={onMouseDown}
       />
-      <span className={resultClassNames.join(" ")} onClick={handleResultClick}>
+      <span className={resultClassNames.join(" ")}>
         {/* Only the outer span's dir="rtl" (CSS) changes which side
             overflow spills off of, so clipping cuts the start, not the
             end — see CalculatorTab.css's .calc-line-result comment.
@@ -147,7 +147,11 @@ export default function Line({
             few boundary characters leak across the clip edge onto the
             wrong (input) side when the value contains digits/punctuation
             next to the clip point. */}
-        <span className="calc-line-result-value">{displayed.result ?? ""}</span>
+        {displayed.result && (
+          <span className="calc-line-result-value" onClick={handleResultClick}>
+            {displayed.result}
+          </span>
+        )}
       </span>
     </div>
   );

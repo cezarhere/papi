@@ -111,13 +111,13 @@ export default function App() {
       <PrecisionContext.Provider value={{ precision, setPrecision }}>
         <div className="app" onKeyDown={handleKeyDown}>
           <div className="title-bar">
-            <div className="segmented" role="tablist">
+            <div className="tabs" role="tablist">
               {TABS.map(({ id, label }) => (
                 <button
                   key={id}
                   role="tab"
                   aria-selected={activeTab === id}
-                  className={activeTab === id ? "segment is-selected" : "segment"}
+                  className={activeTab === id ? "tab is-selected" : "tab"}
                   // Don't take focus from the tab's own content on click.
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setActiveTab(id)}

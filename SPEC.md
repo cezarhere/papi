@@ -84,6 +84,10 @@ does". Settled choices, so they aren't re-litigated:
   outside the grid.
 - **Fill.** Two or more evenly spaced plain numbers continue as a series;
   everything else repeats. Formats are carried.
+- **Delete / Backspace** clear content and keep formatting — except with
+  the whole sheet selected (Cmd+A), where they also clear all formatting
+  and collapse the selection to A1: that gesture means "start over". The
+  grid's context menu has Clear Contents and Clear Formatting.
 - **Undo.** One history for content and formatting; each entry restores
   the selection it was made with. Column widths are not undoable.
 - **Not built (possible later):** inserting/deleting rows and columns,

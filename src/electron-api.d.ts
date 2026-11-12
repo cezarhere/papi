@@ -21,7 +21,7 @@ interface Window {
     onAccentColor(callback: (color: string) => void): () => void;
     // Commands from the app menu, the tray menu and the grid's context
     // menu: "settings", "tab:calculator", "tab:spreadsheet", and for the
-    // grid "cut", "copy", "paste", "clear".
+    // grid "cut", "copy", "paste", "clear", "clear-format".
     onMenuCommand(callback: (command: string) => void): () => void;
     // Pops up the native context menu for the spreadsheet grid.
     showGridMenu(): void;
