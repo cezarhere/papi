@@ -40,8 +40,9 @@ import { buildDocument, loadDocumentFromStorage, saveDocumentToStorage } from ".
 import { normalizeRange, singleCellRange, type RangeBounds } from "./spreadsheet/range";
 import { buildSheetView } from "./spreadsheet/sheetView";
 import "./spreadsheet/SpreadsheetTab.css";
+import { autoSumRange, currentRegion, hasHeaderRow, shiftFormats, shiftWidths, sortOrder, type SortKey } from "./spreadsheet/structure";
 import { summarize } from "./spreadsheet/summary";
-import Toolbar from "./spreadsheet/Toolbar";
+import Toolbar, { type AutoFunction, type StructureCommand } from "./spreadsheet/Toolbar";
 import type { CellAddress, CellFormat, CellRange, EditingState } from "./spreadsheet/types";
 import { useCellFormatting, type FormatChange, type FormatSnapshot } from "./spreadsheet/useCellFormatting";
 import { clampWidth, useColumnWidths } from "./spreadsheet/useColumnWidths";
@@ -283,10 +284,13 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
 
   // Records one undo-able action. `content` must be true exactly when the
   // engine took one undo step for it (see history.ts).
-  function record(change: { content: boolean; format?: FormatChange }, keepCopied = false) {
+  function record(
+    change: { content: boolean; format?: FormatChange; widths?: { before: Record<string, number>; after: Record<string, number> } },
+    keepCopied = false,
+  ) {
     const format = change.format && Object.keys(change.format.after).length > 0 ? change.format : undefined;
-    if (!change.content && !format) return;
-    setHistory((prev) => pushHistory(prev, { content: change.content, format, selection }));
+    if (!change.content && !format && !change.widths) return;
+    setHistory((prev) => pushHistory(prev, { content: change.content, format, widths: change.widths, selection }));
     // Like Excel, changing the sheet ends "copy mode": the dashed outline
     // goes away and a later paste brings in plain values.
     if (!keepCopied) setCopied(null);
@@ -297,6 +301,7 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     if (!entry) return;
     if (entry.content) engine.undo();
     if (entry.format) formatting.restore(entry.format.before);
+    if (entry.widths) columnWidths.replaceAll(entry.widths.before);
     setHistory((prev) => stepHistory(prev, -1));
     setCopied(null);
     // Bring the active cell back into view — not the far corner of a
@@ -311,6 +316,7 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     if (!entry) return;
     if (entry.content) engine.redo();
     if (entry.format) formatting.restore(entry.format.after);
+    if (entry.widths) columnWidths.replaceAll(entry.widths.after);
     setHistory((prev) => stepHistory(prev, 1));
     setCopied(null);
     // Bring the active cell back into view — not the far corner of a
@@ -643,6 +649,16 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     else if (command === "paste") pasteFromClipboard();
     else if (command === "clear") clearSelection();
     else if (command === "clear-format") clearFormatting();
+    else if (
+      command === "row-above" ||
+      command === "row-below" ||
+      command === "col-left" ||
+      command === "col-right" ||
+      command === "delete-rows" ||
+      command === "delete-cols"
+    ) {
+      handleStructure(command);
+    }
   };
   useEffect(() => {
     if (!active) return;
@@ -693,6 +709,190 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
       return { ...current, numberFormat, decimals: clamp(base + delta, 0, MAX_DECIMALS) };
     });
     record({ content: false, format }, true);
+  }
+
+  const focusGrid = () => containerRef.current?.focus({ preventScroll: true });
+
+  function handleSetAlign(align: "auto" | "left" | "center" | "right") {
+    const format = formatting.applyFormat(selectedAddresses(), (current) => ({
+      ...current,
+      align: align === "auto" ? undefined : align,
+    }));
+    record({ content: false, format }, true);
+    containerRef.current?.focus({ preventScroll: true });
+  }
+
+  // The one-click $ / % / thousands buttons: apply the format, or — when
+  // the whole selection already has it — go back to General.
+  function handleToggleNumberFormat(numberFormat: NumberFormat) {
+    const addresses = selectedAddresses();
+    const allSet = addresses.every((address) => formatting.getFormat(address).numberFormat === numberFormat);
+    const format = formatting.applyFormat(addresses, (current) => ({
+      ...current,
+      numberFormat: allSet ? undefined : numberFormat,
+      // The thousands button is for whole-looking figures: no decimals.
+      decimals: !allSet && numberFormat === "number" ? 0 : undefined,
+    }));
+    record({ content: false, format }, true);
+  }
+
+  const isMultiSelection =
+    selectionBounds.maxRow > selectionBounds.minRow || selectionBounds.maxCol > selectionBounds.minCol;
+
+  // AutoSum (and its Average / Count / Min / Max siblings).
+  //  - A block of several rows: a total under each of its columns that
+  //    holds numbers.
+  //  - A single row of several cells: a total to its right.
+  //  - One cell: starts a formula there over the run of numbers above it
+  //    (or to its left), left open so Enter confirms it — as in Excel.
+  function handleAutoFunction(name: AutoFunction) {
+    if (editing) return;
+    focusGrid(); // the toolbar's menus take focus; give it back
+    const { minRow, maxRow, minCol, maxCol } = selectionBounds;
+    const hasNumber = (row: number, col: number) => view.numbers[addressKey({ row, col })] !== undefined;
+
+    if (!isMultiSelection) {
+      const range = autoSumRange((address) => hasNumber(address.row, address.col), activeCell);
+      const formula = range ? `=${name}(${formatRangeReference(toRange(range))})` : `=${name}(`;
+      startEdit(activeCell, formula, "cell", "enter");
+      return;
+    }
+
+    if (maxRow > minRow) {
+      const totalRow = maxRow + 1;
+      if (totalRow >= rows) {
+        showToast("No room below for a total");
+        return;
+      }
+      const line: string[] = [];
+      let any = false;
+      for (let col = minCol; col <= maxCol; col++) {
+        let numeric = false;
+        for (let row = minRow; row <= maxRow; row++) numeric ||= hasNumber(row, col);
+        any ||= numeric;
+        line.push(
+          numeric
+            ? `=${name}(${formatRangeReference({ anchor: { row: minRow, col }, focus: { row: maxRow, col } })})`
+            : engine.raw({ row: totalRow, col }),
+        );
+      }
+      if (!any) {
+        showToast("No numbers selected");
+        return;
+      }
+      engine.setMatrix({ row: totalRow, col: minCol }, [line]);
+      record({ content: true });
+      setSelection(toRange({ minRow, maxRow: totalRow, minCol, maxCol }));
+      reveal({ row: totalRow, col: activeCell.col });
+      return;
+    }
+
+    const totalCol = maxCol + 1;
+    if (totalCol >= cols) {
+      showToast("No room to the right for a total");
+      return;
+    }
+    engine.setCell(
+      { row: minRow, col: totalCol },
+      `=${name}(${formatRangeReference({ anchor: { row: minRow, col: minCol }, focus: { row: minRow, col: maxCol } })})`,
+    );
+    record({ content: true });
+    setSelection(toRange({ minRow, maxRow, minCol, maxCol: totalCol }));
+    reveal({ row: minRow, col: totalCol });
+  }
+
+  // Sorts whole rows by the active cell's column: the selection if there is
+  // one, otherwise the block of data around the cell. A text header above
+  // numbers stays where it is.
+  function handleSort(descending: boolean) {
+    if (editing) return;
+    focusGrid();
+    let region = isMultiSelection ? selectionBounds : currentRegion(engine.isEmpty, activeCell, rows, cols);
+    if (!isMultiSelection) {
+      // Rows at the bottom of the block that are a summary of it rather
+      // than part of it stay where they are: totals rows (any =SUM(…),
+      // =AVERAGE(…) … in the row) and rows with nothing in the sort column.
+      const aggregate = /^=(SUM|AVERAGE|COUNT|COUNTA|MIN|MAX|MEDIAN|SUBTOTAL)\(/i;
+      const found = region;
+      const isSummary = (row: number) => {
+        if (engine.isEmpty({ row, col: activeCell.col })) return true;
+        for (let col = found.minCol; col <= found.maxCol; col++) {
+          if (aggregate.test(engine.raw({ row, col }))) return true;
+        }
+        return false;
+      };
+      let maxRow = region.maxRow;
+      while (maxRow > region.minRow && isSummary(maxRow)) maxRow--;
+      region = { ...region, maxRow };
+    }
+    const keyOf = (row: number): SortKey => {
+      const cell = view.cells[addressKey({ row, col: activeCell.col })];
+      if (!cell) return null;
+      return cell.kind === "number" ? view.numbers[addressKey(cell)] : cell.text;
+    };
+    const keys: SortKey[] = [];
+    for (let row = region.minRow; row <= region.maxRow; row++) keys.push(keyOf(row));
+    const header = hasHeaderRow(keys);
+    const body: RangeBounds = { ...region, minRow: region.minRow + (header ? 1 : 0) };
+    const order = sortOrder(header ? keys.slice(1) : keys, descending);
+    if (order.length < 2 || order.every((from, index) => from === index)) return;
+
+    const changes: FormatSnapshot = {};
+    order.forEach((from, index) => {
+      for (let col = body.minCol; col <= body.maxCol; col++) {
+        changes[addressKey({ row: body.minRow + index, col })] =
+          formatting.formats[addressKey({ row: body.minRow + from, col })];
+      }
+    });
+    engine.sortRows(body, order);
+    record({ content: true, format: formatting.setMany(changes) });
+  }
+
+  // Insert / delete whole rows or columns at the selection. Formats and
+  // column widths move with the cells.
+  function handleStructure(command: StructureCommand) {
+    if (editing) return;
+    focusGrid();
+    const axis = command.endsWith("rows") || command.startsWith("row") ? "row" : "col";
+    const first = axis === "row" ? selectionBounds.minRow : selectionBounds.minCol;
+    const last = axis === "row" ? selectionBounds.maxRow : selectionBounds.maxCol;
+    const count = last - first + 1;
+    const limit = axis === "row" ? rows : cols;
+    const removing = command === "delete-rows" || command === "delete-cols";
+    const index = command === "row-below" || command === "col-right" ? last + 1 : first;
+
+    let done: boolean;
+    if (removing) {
+      done = axis === "row" ? engine.removeRows(index, count) : engine.removeCols(index, count);
+    } else if (index >= limit) {
+      done = false;
+    } else {
+      done = axis === "row" ? engine.insertRows(index, count) : engine.insertCols(index, count);
+    }
+    if (!done) {
+      showToast(
+        removing
+          ? "Couldn't delete that"
+          : axis === "row"
+            ? "No room: the last rows aren't empty"
+            : "No room: the last columns aren't empty",
+      );
+      return;
+    }
+
+    const delta = removing ? -count : count;
+    const shifted = shiftFormats(formatting.formats, axis, index, delta, rows, cols);
+    const changes: FormatSnapshot = {};
+    for (const key of Object.keys(formatting.formats)) changes[key] = undefined;
+    Object.assign(changes, shifted);
+    const format = formatting.setMany(changes);
+
+    let widths: { before: Record<string, number>; after: Record<string, number> } | undefined;
+    if (axis === "col") {
+      widths = { before: columnWidths.widths, after: shiftWidths(columnWidths.widths, index, delta, cols) };
+      columnWidths.replaceAll(widths.after);
+    }
+    record({ content: true, format, widths });
   }
 
   // Double-click on a column's resize edge: size it to its widest content
@@ -1164,7 +1364,12 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
         onToggleItalic={() => applyToggle("italic")}
         onSetFill={handleSetFill}
         onSetNumberFormat={handleSetNumberFormat}
+        onToggleNumberFormat={handleToggleNumberFormat}
         onChangeDecimals={handleChangeDecimals}
+        onSetAlign={handleSetAlign}
+        onAutoFunction={handleAutoFunction}
+        onSort={handleSort}
+        onStructure={handleStructure}
       />
       <FormulaBar
         inputRef={barInputRef}

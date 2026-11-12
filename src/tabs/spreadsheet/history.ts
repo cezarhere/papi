@@ -9,6 +9,8 @@ import type { FormatSnapshot } from "./useCellFormatting";
 export interface HistoryEntry {
   content: boolean;
   format?: { before: FormatSnapshot; after: FormatSnapshot };
+  // Column widths, when the action moved columns (insert/delete column).
+  widths?: { before: Record<string, number>; after: Record<string, number> };
   // Selection when the action happened; restored on undo and redo.
   selection: CellRange;
 }

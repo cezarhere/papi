@@ -90,8 +90,25 @@ does". Settled choices, so they aren't re-litigated:
   grid's context menu has Clear Contents and Clear Formatting.
 - **Undo.** One history for content and formatting; each entry restores
   the selection it was made with. Column widths are not undoable.
-- **Not built (possible later):** inserting/deleting rows and columns,
-  multiple selections (Cmd+click), coloured reference *text* in the
+- **AutoSum (Σ).** Several rows selected: a total under each column that
+  has numbers. One row of several cells: a total to its right. A single
+  cell: a formula over the run of numbers above it (else to its left),
+  left open for Enter to confirm. The chevron offers Average, Count, Min
+  and Max the same way.
+- **Sort.** Whole rows, by the active cell's column: the selection, or
+  with a single cell the block of data around it. A text header above
+  numbers stays put, as does a totals row (`=SUM(…)` etc.) at the bottom
+  of an auto-detected block. Numbers come before text; blanks are always
+  last. Formulas move with their row.
+- **Rows and columns.** Insert above/below/left/right and delete, for as
+  many rows/columns as the selection spans (toolbar menu and context
+  menu). Formulas keep pointing at the same cells; formats and column
+  widths move too. The grid stays 50 × 26, so an insert that would push
+  content off the far edge is refused.
+- **Alignment** is a cell format (`align`); unset means automatic.
+- **Quick formats.** `$`, `%` and `,` toggle Currency ($), Percent and
+  Number (no decimals) on and off.
+- **Not built (possible later):** multiple selections (Cmd+click), coloured reference *text* in the
   formula, fill-handle double-click.
 
 ## Formulas
@@ -188,7 +205,7 @@ does". Settled choices, so they aren't re-litigated:
     native JSON numbers — this was confirmed empirically while
     implementing, not assumed up front.
   - `formats` — sparse map keyed the same way, values are the same
-    `{bold?, italic?, fill?}` shape formatting is already stored in during
+    `{bold?, italic?, fill?, numberFormat?, decimals?, align?}` shape formatting is already stored in during
     a session — a direct dump/restore, no transformation.
   - No grid-dimensions field — the grid is a fixed size (see "Grid
     sizing"), so persisting it wouldn't mean anything on restore.

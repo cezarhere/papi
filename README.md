@@ -31,7 +31,8 @@ A small macOS menu-bar app with two tabs, always one shortcut away
   (`A1:B10`), function autocomplete, click or arrow to pick cells into a
   formula, Excel's keyboard navigation (Tab/Enter, Shift- and ⌘-arrows,
   F2, F4), copy/cut/paste to and from other apps, a fill handle that
-  continues number series, undo/redo, number formats and
+  continues number series, one-click totals (Σ), sorting, inserting and
+  deleting rows and columns, undo/redo, number formats, alignment and
   bold/italic/fill colors. Dates, percentages, currency and times are
   recognised as you type them. Powered by [HyperFormula](https://hyperformula.handsontable.com/),
   which provides about 400 Excel-compatible functions, including:

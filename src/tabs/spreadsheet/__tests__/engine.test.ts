@@ -127,3 +127,35 @@ describe("undo", () => {
     expect(e.raw(at("G5"))).toBe("d");
   });
 });
+
+describe("sorting and inserting", () => {
+  it("sortRows moves whole rows; same-row references follow", () => {
+    const e = make({ A1: "b", B1: "2", C1: "=B1*10", A2: "a", B2: "1", C2: "=B2*10", A3: "c", B3: "3", C3: "=B3*10" });
+    e.sortRows(box("A1", "C3"), [2, 0, 1]); // c, b, a
+    expect([e.raw(at("A1")), e.raw(at("A2")), e.raw(at("A3"))]).toEqual(["c", "b", "a"]);
+    expect(e.raw(at("C1"))).toBe("=B1*10");
+    expect([1, 2, 3].map((r) => e.view({ row: r - 1, col: 2 }).number)).toEqual([30, 20, 10]);
+    expect(e.undo()).toBe(true);
+    expect(e.raw(at("A1"))).toBe("b");
+  });
+  it("inserting and removing rows/columns keeps formulas pointing at the same cells", () => {
+    const e = make({ A1: "1", A2: "2", A3: "=SUM(A1:A2)", C1: "=A1" });
+    expect(e.insertRows(1, 1)).toBe(true);
+    expect(e.raw(at("A4"))).toBe("=SUM(A1:A3)");
+    expect(e.isEmpty(at("A2"))).toBe(true);
+    expect(e.insertCols(0, 2)).toBe(true);
+    expect(e.raw(at("E1"))).toBe("=C1");
+    expect(e.removeCols(0, 2)).toBe(true);
+    expect(e.removeRows(1, 1)).toBe(true);
+    expect(e.exportCells()).toEqual({ A1: "1", A2: "2", A3: "=SUM(A1:A2)", C1: "=A1" });
+    for (let i = 0; i < 4; i++) expect(e.undo()).toBe(true);
+    expect(e.undo()).toBe(false);
+  });
+  it("refuses an insert that would push content off the grid", () => {
+    const e = make({ A50: "x", Z1: "y" });
+    expect(e.insertRows(0, 1)).toBe(false);
+    expect(e.insertCols(0, 1)).toBe(false);
+    expect(e.exportCells()).toEqual({ A50: "x", Z1: "y" });
+    expect(e.undo()).toBe(false);
+  });
+});

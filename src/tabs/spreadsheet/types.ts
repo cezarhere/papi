@@ -43,4 +43,7 @@ export interface CellFormat {
   numberFormat?: NumberFormat;
   // Fixed decimal places; undefined uses the format's default.
   decimals?: number;
+  // Horizontal alignment. Undefined is automatic: numbers right, text left,
+  // errors and TRUE/FALSE centred.
+  align?: "left" | "center" | "right";
 }

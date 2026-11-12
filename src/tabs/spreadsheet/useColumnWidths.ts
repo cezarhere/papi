@@ -9,6 +9,8 @@ export interface ColumnWidths {
   widths: Record<string, number>;
   getWidth(col: number): number;
   setWidth(col: number, width: number): void;
+  // Replaces every width at once (columns inserted/deleted, and its undo).
+  replaceAll(next: Record<string, number>): void;
 }
 
 export function clampWidth(width: number): number {
@@ -40,5 +42,7 @@ export function useColumnWidths(initial: Record<string, number>): ColumnWidths {
     });
   }, []);
 
-  return { widths, getWidth, setWidth };
+  const replaceAll = useCallback((next: Record<string, number>) => setWidths(cleanWidths(next)), []);
+
+  return { widths, getWidth, setWidth, replaceAll };
 }

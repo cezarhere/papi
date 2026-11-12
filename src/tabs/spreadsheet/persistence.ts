@@ -48,6 +48,7 @@ function isCellFormat(value: unknown): value is CellFormat {
     (format.italic === undefined || typeof format.italic === "boolean") &&
     (format.fill === undefined || typeof format.fill === "string") &&
     (format.numberFormat === undefined || isNumberFormat(format.numberFormat)) &&
+    (format.align === undefined || format.align === "left" || format.align === "center" || format.align === "right") &&
     (format.decimals === undefined ||
       (Number.isInteger(format.decimals) && (format.decimals as number) >= 0 && (format.decimals as number) <= MAX_DECIMALS))
   );

@@ -99,6 +99,7 @@ function GridCells({ cells, formats, geometry, cols, font }: GridCellsProps) {
         if (cell.format?.bold) classNames.push("cell-bold");
         if (cell.format?.italic) classNames.push("cell-italic");
         if (cell.format?.fill) classNames.push("cell-filled");
+        if (cell.format?.align) classNames.push(`cell-align-${cell.format.align}`);
         return (
           <div
             key={cell.key}

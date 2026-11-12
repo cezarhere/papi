@@ -80,6 +80,19 @@ export interface SheetEngine {
   // Cut-and-paste: moves the cells, keeping formulas that point at them
   // pointing at them. False when the destination doesn't fit.
   move(source: RangeBounds, destination: CellAddress): boolean;
+  // Reorders the rows of `bounds`: row i of the result is the row that was
+  // at offset order[i]. Formulas travel with their row, references to cells
+  // on the same row following along (=B2*C2 moved to row 5 is =B5*C5).
+  sortRows(bounds: RangeBounds, order: number[]): void;
+  // Insert `count` blank rows/columns before `index`, shifting the rest
+  // along and keeping every formula pointing at the cells it pointed at.
+  // The grid is a fixed size, so this is refused (false) when it would push
+  // content off the far edge.
+  insertRows(index: number, count: number): boolean;
+  insertCols(index: number, count: number): boolean;
+  // Remove rows/columns, closing the gap.
+  removeRows(index: number, count: number): boolean;
+  removeCols(index: number, count: number): boolean;
   undo(): boolean;
   redo(): boolean;
   // Sparse map of every non-empty cell's raw content, for persistence.
@@ -260,6 +273,57 @@ export function createSheetEngine(
     return true;
   }
 
+  function sortRows(bounds: RangeBounds, order: number[]): void {
+    const rowRange = (row: number): SimpleCellRange => ({
+      start: { sheet, row, col: bounds.minCol },
+      end: { sheet, row, col: bounds.maxCol },
+    });
+    // Everything is read from the sheet as it is now, then written in one go.
+    const data = order.map((from, index) =>
+      hf.getFillRangeData(rowRange(bounds.minRow + from), rowRange(bounds.minRow + index), true)[0],
+    );
+    hf.setCellContents({ sheet, row: bounds.minRow, col: bounds.minCol }, data);
+  }
+
+  // True when the last `count` rows (or columns) hold nothing, i.e. an
+  // insert can push them off the edge without losing anything.
+  function tailIsEmpty(axis: "row" | "col", count: number): boolean {
+    for (let row = axis === "row" ? MAX_ROWS - count : 0; row < MAX_ROWS; row++) {
+      for (let col = axis === "col" ? MAX_COLS - count : 0; col < MAX_COLS; col++) {
+        if (!hf.isCellEmpty({ sheet, row, col })) return false;
+      }
+    }
+    return true;
+  }
+
+  function insertRows(index: number, count: number): boolean {
+    if (count < 1 || index < 0 || index >= MAX_ROWS || !tailIsEmpty("row", count)) return false;
+    if (!hf.isItPossibleToAddRows(sheet, [index, count])) return false;
+    hf.addRows(sheet, [index, count]);
+    return true;
+  }
+
+  function insertCols(index: number, count: number): boolean {
+    if (count < 1 || index < 0 || index >= MAX_COLS || !tailIsEmpty("col", count)) return false;
+    if (!hf.isItPossibleToAddColumns(sheet, [index, count])) return false;
+    hf.addColumns(sheet, [index, count]);
+    return true;
+  }
+
+  function removeRows(index: number, count: number): boolean {
+    if (count < 1 || index < 0 || index + count > MAX_ROWS) return false;
+    if (!hf.isItPossibleToRemoveRows(sheet, [index, count])) return false;
+    hf.removeRows(sheet, [index, count]);
+    return true;
+  }
+
+  function removeCols(index: number, count: number): boolean {
+    if (count < 1 || index < 0 || index + count > MAX_COLS) return false;
+    if (!hf.isItPossibleToRemoveColumns(sheet, [index, count])) return false;
+    hf.removeColumns(sheet, [index, count]);
+    return true;
+  }
+
   function undo(): boolean {
     if (!hf.isThereSomethingToUndo()) return false;
     hf.undo();
@@ -297,6 +361,11 @@ export function createSheetEngine(
     clear,
     copyInto,
     move,
+    sortRows,
+    insertRows,
+    insertCols,
+    removeRows,
+    removeCols,
     undo,
     redo,
     exportCells,

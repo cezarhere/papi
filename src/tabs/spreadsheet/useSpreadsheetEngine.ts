@@ -18,6 +18,10 @@ export function useSpreadsheetEngine(initialCells: Record<string, CellRawValue>)
 
   const api = useMemo((): SheetEngine => {
     const bump = () => setRevision((n) => n + 1);
+    const changed = (done: boolean) => {
+      if (done) bump();
+      return done;
+    };
     return {
       ...core,
       setCell: (address, rawInput) => {
@@ -42,6 +46,14 @@ export function useSpreadsheetEngine(initialCells: Record<string, CellRawValue>)
         if (moved) bump();
         return moved;
       },
+      sortRows: (bounds, order) => {
+        core.sortRows(bounds, order);
+        bump();
+      },
+      insertRows: (index, count) => changed(core.insertRows(index, count)),
+      insertCols: (index, count) => changed(core.insertCols(index, count)),
+      removeRows: (index, count) => changed(core.removeRows(index, count)),
+      removeCols: (index, count) => changed(core.removeCols(index, count)),
       undo: () => {
         const done = core.undo();
         if (done) bump();

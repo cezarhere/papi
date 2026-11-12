@@ -276,6 +276,14 @@ if (!gotLock) {
       { type: "separator" },
       { label: "Clear Contents", click: () => sendCommand("clear") },
       { label: "Clear Formatting", click: () => sendCommand("clear-format") },
+      { type: "separator" },
+      { label: "Insert Row Above", click: () => sendCommand("row-above") },
+      { label: "Insert Row Below", click: () => sendCommand("row-below") },
+      { label: "Insert Column Left", click: () => sendCommand("col-left") },
+      { label: "Insert Column Right", click: () => sendCommand("col-right") },
+      { type: "separator" },
+      { label: "Delete Rows", click: () => sendCommand("delete-rows") },
+      { label: "Delete Columns", click: () => sendCommand("delete-cols") },
     ]).popup({ window: mainWindow });
   });
 
@@ -379,7 +387,7 @@ function openSettings(): void {
 
 // Window size and position are remembered between launches, in a small
 // JSON file next to the other main-process settings.
-const DEFAULT_WINDOW_SIZE = { width: 480, height: 440 };
+const DEFAULT_WINDOW_SIZE = { width: 560, height: 460 };
 const MIN_WINDOW_SIZE = { width: 380, height: 300 };
 
 function windowStatePath(): string {

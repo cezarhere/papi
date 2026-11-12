@@ -187,6 +187,20 @@ long text next to empty cells      -> spills across them
 - Switch to the Calculator tab and back: selection, scroll position and
   undo history are still there
 
+### Toolbar
+- Σ with a block of numbers selected writes totals underneath; with one
+  cell under a column of numbers it proposes `=SUM(…)` (Enter confirms);
+  the chevron has Average / Count / Min / Max
+- Sort ↑ / ↓ with one cell selected sorts the surrounding table by that
+  column, keeping the header row and a `=SUM` totals row in place;
+  formulas like `=B2*C2` still point at their own row afterwards
+- Rows-and-columns menu (also on right-click): insert above/below/left/
+  right, delete rows/columns; totals and formats follow; one Cmd+Z each
+- Alignment menu: Left / Centre / Right / Automatic
+- `$` `%` `,` toggle their format; `.0` / `.00` change decimals; `123`
+  menu has the full list
+- After using any toolbar control the arrow keys still move the selection
+
 ### App
 - Appearance follows the system (light/dark, accent colour)
 - Cmd+1 / Cmd+2 switch tabs; Cmd+, opens Settings

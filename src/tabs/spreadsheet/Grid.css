@@ -83,6 +83,17 @@
   text-align: center;
 }
 
+/* An explicit alignment (toolbar) overrides the automatic one above. */
+.cell.cell-align-left {
+  text-align: left;
+}
+.cell.cell-align-center {
+  text-align: center;
+}
+.cell.cell-align-right {
+  text-align: right;
+}
+
 .cell-error {
   color: var(--text-error);
   /* Errors carry a tooltip explaining them. */
