@@ -538,8 +538,15 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
     return text;
   }
 
+  // In the app the clipboard is read and written by the main process
+  // (always allowed); in a plain browser, by the web clipboard API, which
+  // may be refused.
   function copyToClipboard(cut: boolean) {
     const text = copySelection(cut);
+    if (window.electronAPI?.writeClipboard) {
+      window.electronAPI.writeClipboard(text);
+      return;
+    }
     navigator.clipboard?.writeText(text).catch(() => {
       // Still copied within the sheet; it just didn't reach other apps.
     });
@@ -547,7 +554,11 @@ export default function SpreadsheetTab({ active }: SpreadsheetTabProps) {
 
   function pasteFromClipboard() {
     const fallback = copied?.text ?? null;
-    const read = navigator.clipboard?.readText ? navigator.clipboard.readText() : Promise.reject(new Error("unavailable"));
+    const read = window.electronAPI?.readClipboard
+      ? window.electronAPI.readClipboard()
+      : navigator.clipboard?.readText
+        ? navigator.clipboard.readText()
+        : Promise.reject(new Error("unavailable"));
     read
       .then((text) => pasteTextRef.current(text))
       .catch(() => {

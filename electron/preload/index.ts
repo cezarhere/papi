@@ -91,6 +91,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("menu:command", listener);
     return () => ipcRenderer.removeListener("menu:command", listener);
   },
+  // The system clipboard, as plain text (the spreadsheet grid's copy/paste).
+  readClipboard(): Promise<string> {
+    return ipcRenderer.invoke("clipboard:read");
+  },
+  writeClipboard(text: string): void {
+    ipcRenderer.send("clipboard:write", text);
+  },
   // Pops up the native context menu for the spreadsheet grid.
   showGridMenu(): void {
     ipcRenderer.send("menu:grid");

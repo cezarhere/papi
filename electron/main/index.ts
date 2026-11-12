@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
+  clipboard,
   globalShortcut,
   ipcMain,
   Menu,
@@ -259,6 +260,15 @@ if (!gotLock) {
     ipcMain.on("window:flushed", resume);
     setTimeout(resume, 400);
     mainWindow.webContents.send("window:hiding");
+  });
+
+  // System clipboard for the spreadsheet grid. A selected cell isn't a text
+  // field, so the browser's own paste never reaches it, and the web
+  // clipboard API can be refused permission; the main process always can.
+  ipcMain.handle("clipboard:read", (event) => (isTrustedSender(event) ? clipboard.readText() : ""));
+  ipcMain.on("clipboard:write", (event, text: unknown) => {
+    if (!isTrustedSender(event) || typeof text !== "string" || text.length > 5_000_000) return;
+    clipboard.writeText(text);
   });
 
   // System accent colour, for the renderer's --accent.

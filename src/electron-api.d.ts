@@ -23,6 +23,9 @@ interface Window {
     // menu: "settings", "tab:calculator", "tab:spreadsheet", and for the
     // grid "cut", "copy", "paste", "clear", "clear-format".
     onMenuCommand(callback: (command: string) => void): () => void;
+    // The system clipboard as plain text, read/written by the main process.
+    readClipboard(): Promise<string>;
+    writeClipboard(text: string): void;
     // Pops up the native context menu for the spreadsheet grid.
     showGridMenu(): void;
   };

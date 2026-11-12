@@ -77,7 +77,11 @@ does". Settled choices, so they aren't re-litigated:
   `1,234.5` is stored as `1234.5`. A missing `)` is added on commit.
 - **Overflow.** Text spills across empty neighbours; a number that doesn't
   fit shows `####`.
-- **Clipboard.** Tab-separated text on the system clipboard. A paste whose
+- **Clipboard.** Tab-separated text on the system clipboard — one row
+  per line, one cell per tab, so several lines of plain text paste down a
+  column. Copy/cut/paste work on a selected cell without entering edit
+  mode; in the app the clipboard is read and written by the main process
+  (the web clipboard API can be refused). A paste whose
   text still matches the range last copied here is an internal paste
   (formulas adjusted, formats carried, a cut moves); anything else is
   pasted as typed values. Any edit ends copy mode. Nothing is ever written
