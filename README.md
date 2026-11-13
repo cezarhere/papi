@@ -53,7 +53,8 @@ A small macOS menu-bar app with two tabs, always one shortcut away
   HyperFormula's [function reference](https://hyperformula.handsontable.com/guide/built-in-functions.html).
 - **App** — lives in the menu bar, toggles with a global shortcut (default
   ⌥', changeable in Settings), optional launch at login, automatic updates
-  (opt-out), follows the system's light/dark appearance and accent colour,
+  (opt-out), light, dark or follow-the-system appearance (Settings), the system accent
+  colour,
   remembers your last tab and window position, and opens on whichever Space
   you're on.
 

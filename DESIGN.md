@@ -13,7 +13,11 @@ This replaced the original single dark theme in v0.1.5.
 ## Tokens
 
 Defined once in `src/theme.css`, in two value sets chosen by
-`prefers-color-scheme` (Electron follows the system appearance):
+`prefers-color-scheme`. Electron follows the system appearance unless
+Settings → Appearance forces Light or Dark; that choice is applied as
+`nativeTheme.themeSource` (`electron/main/appearance.ts`), which flips both
+`prefers-color-scheme` and the window's vibrancy, so the stylesheet needs
+no separate override:
 
 | Token | Use |
 | --- | --- |

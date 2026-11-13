@@ -4,6 +4,12 @@ import "./SettingsPopover.css";
 
 const PRECISION_OPTIONS = [0, 2, 4, 6, 8, 10];
 
+const APPEARANCE_OPTIONS = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 // Feather Icons "settings" glyph (MIT) — a plain gear, matches the app's
 // minimal outline aesthetic; inherits color via currentColor so it reacts
 // to the button's own hover/focus styling in CSS rather than needing its
@@ -104,6 +110,7 @@ export default function SettingsPopover({ isOpen, onOpenChange: setIsOpen }: Set
   // null while loading (or unavailable — undefined in the plain-browser
   // dev workflow, which has no window.electronAPI at all) — these rows
   // just don't render until there's a real Electron-backed value to show.
+  const [appearance, setAppearanceState] = useState<string | null>(null);
   const [launchAtLogin, setLaunchAtLoginState] = useState<boolean | null>(null);
   const [autoUpdate, setAutoUpdateState] = useState<boolean | null>(null);
   const [shortcut, setShortcutState] = useState<string | null>(null);
@@ -111,10 +118,16 @@ export default function SettingsPopover({ isOpen, onOpenChange: setIsOpen }: Set
   const [shortcutError, setShortcutError] = useState<string | null>(null);
 
   useEffect(() => {
+    window.electronAPI?.getAppearance?.().then(setAppearanceState);
     window.electronAPI?.getLaunchAtLogin().then(setLaunchAtLoginState);
     window.electronAPI?.getShortcut().then(setShortcutState);
     window.electronAPI?.getAutoUpdate().then(setAutoUpdateState);
   }, []);
+
+  function handleAppearanceChange(value: string) {
+    setAppearanceState(value);
+    void window.electronAPI?.setAppearance(value);
+  }
 
   function handleAutoUpdateChange(checked: boolean) {
     setAutoUpdateState(checked);
@@ -222,6 +235,18 @@ export default function SettingsPopover({ isOpen, onOpenChange: setIsOpen }: Set
               ))}
             </select>
           </label>
+          {appearance !== null && (
+            <label className="settings-row">
+              <span>Appearance</span>
+              <select value={appearance} onChange={(e) => handleAppearanceChange(e.target.value)}>
+                {APPEARANCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {launchAtLogin !== null && (
             <label className="settings-row">
               <span>Launch at login</span>

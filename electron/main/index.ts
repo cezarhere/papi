@@ -24,6 +24,7 @@ import {
   setAutoCheckEnabled,
   startUpdateChecks,
 } from "./updates";
+import { getAppearance, isAppearance, loadAppearance, setAppearance } from "./appearance";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -38,11 +39,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // explicitly below, so this doesn't move any saved data.
 app.setName("PAPI");
 
-// Development only: force an appearance regardless of the system's, e.g.
-// PAPI_THEME=dark, for taking screenshots of both.
-if (!app.isPackaged && (process.env.PAPI_THEME === "dark" || process.env.PAPI_THEME === "light")) {
-  nativeTheme.themeSource = process.env.PAPI_THEME;
-}
 
 const LEGACY_USER_DATA_NAME = "spreadsheet-app";
 const USER_DATA_NAME = "PAPI";
@@ -84,6 +80,15 @@ function pinUserDataPath(): void {
   app.setPath("userData", target);
 }
 pinUserDataPath();
+// Settings → Appearance, applied before any window exists (needs the data
+// folder pinned above).
+loadAppearance();
+
+// Development only: force an appearance regardless of the saved setting,
+// e.g. PAPI_THEME=dark, for taking screenshots of both.
+if (!app.isPackaged && (process.env.PAPI_THEME === "dark" || process.env.PAPI_THEME === "light")) {
+  nativeTheme.themeSource = process.env.PAPI_THEME;
+}
 
 // Replace cezarhere with the GitHub account/org that hosts the repo (also in
 // package.json's homepage/repository).
@@ -276,6 +281,13 @@ if (!gotLock) {
   ipcMain.on("clipboard:write", (event, text: unknown) => {
     if (!isTrustedSender(event) || typeof text !== "string" || text.length > 5_000_000) return;
     clipboard.writeText(text);
+  });
+
+  // Settings → Appearance (System / Light / Dark).
+  ipcMain.handle("appearance:get", (event) => (isTrustedSender(event) ? getAppearance() : "system"));
+  ipcMain.handle("appearance:set", (event, value: unknown) => {
+    if (!isTrustedSender(event) || !isAppearance(value)) return;
+    setAppearance(value);
   });
 
   // System accent colour, for the renderer's --accent.

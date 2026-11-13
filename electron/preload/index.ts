@@ -71,6 +71,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   installUpdate(): void {
     ipcRenderer.send("updates:install");
   },
+  // Settings → Appearance: "system", "light" or "dark".
+  getAppearance(): Promise<string> {
+    return ipcRenderer.invoke("appearance:get");
+  },
+  setAppearance(value: string): Promise<void> {
+    return ipcRenderer.invoke("appearance:set", value);
+  },
   // The accent colour chosen in System Settings, as "#rrggbb".
   getAccentColor(): Promise<string | null> {
     return ipcRenderer.invoke("appearance:accent");

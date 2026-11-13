@@ -15,6 +15,9 @@ interface Window {
     installUpdate(): void;
     onWindowShown(callback: () => void): () => void;
     onWindowHiding(callback: () => void): () => void;
+    // Settings → Appearance: "system", "light" or "dark".
+    getAppearance(): Promise<string>;
+    setAppearance(value: string): Promise<void>;
     // The system accent colour as "#rrggbb" (and again whenever the user
     // changes it in System Settings).
     getAccentColor(): Promise<string | null>;
